@@ -5,8 +5,8 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Sistema de Gestión de Jubilaciones - Municipalidad de Córdoba',
-  description: 'Sistema interno de gestión de jubilaciones para la Municipalidad de Córdoba',
+  title: 'Sistema de Retenciones - Municipalidad de Córdoba',
+  description: 'Sistema interno de gestión de retenciones para la Municipalidad de Córdoba',
   icons: {
     icon: [
       { url: '/icon.png' },

@@ -104,15 +104,15 @@ export default function GestionUsuarios() {
   }
 
   const handleEliminar = async (u: UsuarioListado) => {
-    if (!window.confirm(`¿Eliminar al usuario "${u.nombreUsuario}"? Esta acción no se puede deshacer.`)) return
+    if (!window.confirm(`¿Quitar el acceso a Retenciones al usuario "${u.nombreUsuario}"?`)) return
     setBorrandoId(u.id)
     flash(null)
     const r = await eliminarUsuario(u.id)
     if (r.ok) {
-      flash({ tipo: 'ok', texto: `Usuario "${u.nombreUsuario}" eliminado.` })
+      flash({ tipo: 'ok', texto: `Se quitó el acceso a Retenciones del usuario "${u.nombreUsuario}".` })
       await load(true)
     } else {
-      flash({ tipo: 'error', texto: r.error ?? 'No se pudo eliminar el usuario.' })
+      flash({ tipo: 'error', texto: r.error ?? 'No se pudo quitar el acceso al usuario.' })
     }
     setBorrandoId(null)
   }
@@ -121,8 +121,10 @@ export default function GestionUsuarios() {
     <div className="p-6">
       <h1 className="text-xl font-bold text-[#1e3a8a] mb-1">Gestión de Usuarios</h1>
       <p className="text-sm text-slate-500 mb-6">
-        Administración de accesos. Cada usuario tiene un único rol: <span className="font-semibold">ADMIN</span> (acceso total) o{' '}
-        <span className="font-semibold">JUBILA</span> (sin carga masiva).
+        Administración de accesos del sistema de Retenciones. Solo se muestran los usuarios habilitados para Retenciones
+        (<span className="font-semibold">RETENCIONES = 1</span>). Cada usuario tiene un rol:{' '}
+        <span className="font-semibold">ADMIN</span> (acceso total) o <span className="font-semibold">JUBILA</span>{' '}
+        (acceso estándar).
       </p>
 
       {mensaje && (
@@ -178,7 +180,9 @@ export default function GestionUsuarios() {
               {creando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
               Crear usuario
             </button>
-            <p className="text-[10px] text-slate-400 w-full">El usuario deberá cambiar la contraseña al primer ingreso.</p>
+            <p className="text-[10px] text-slate-400 w-full">
+              Se creará habilitado solo para Retenciones y deberá cambiar la contraseña al primer ingreso.
+            </p>
           </div>
         </form>
 
@@ -273,10 +277,10 @@ export default function GestionUsuarios() {
                             type="button"
                             onClick={() => void handleEliminar(u)}
                             disabled={borrandoId === u.id}
-                            title="Eliminar usuario"
+                            title="Quitar acceso a Retenciones"
                             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-red-50 hover:border-red-200 hover:text-red-700 text-[10px] font-semibold transition disabled:opacity-50"
                           >
-                            {borrandoId === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />} Eliminar
+                            {borrandoId === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />} Quitar acceso
                           </button>
                         </div>
                       </td>

@@ -1,19 +1,3 @@
-/**
- * Formats digits into expediente format: 000.000/00
- * Only accepts numbers and formats as XXX.XXX/XX
- */
-export function formatExpediente(value: string): string {
-  if (!value) return ''
-  const digits = value.replace(/\D/g, '').slice(0, 8)
-  if (digits.length <= 3) return digits
-  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`
-  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}/${digits.slice(6, 8)}`
-}
-
-/**
- * Formats digits into date format: 00/00/0000 (dd/mm/aaaa)
- * Only accepts numbers and formats as DD/MM/YYYY
- */
 export function formatDate(value: string): string {
   if (!value) return ''
   const digits = value.replace(/\D/g, '').slice(0, 8)
@@ -22,121 +6,53 @@ export function formatDate(value: string): string {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
 }
 
-/**
- * Valida si un string con fecha dd/mm/aaaa es válido.
- * Retorna true si está vacío (campos opcionales).
- */
-export function isValidDateString(val: string): boolean {
-  if (!val || !val.trim()) return true
-  const parts = val.trim().split('/')
+export function isValidDateString(value: string): boolean {
+  if (!value || !value.trim()) return true
+  const parts = value.trim().split('/')
   if (parts.length !== 3) return false
-  const [dStr, mStr, yStr] = parts
-  if (dStr.length !== 2 || mStr.length !== 2 || yStr.length !== 4) return false
-  const d = parseInt(dStr, 10)
-  const m = parseInt(mStr, 10)
-  const y = parseInt(yStr, 10)
-  if (isNaN(d) || isNaN(m) || isNaN(y)) return false
-  if (y < 1900 || y > 3000) return false
-  if (m < 1 || m > 12) return false
-  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate()
-  if (d < 1 || d > daysInMonth) return false
-  return true
+  const [dayString, monthString, yearString] = parts
+  if (dayString.length !== 2 || monthString.length !== 2 || yearString.length !== 4) return false
+  const day = Number(dayString)
+  const month = Number(monthString)
+  const year = Number(yearString)
+  if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return false
+  if (year < 1900 || year > 3000) return false
+  if (month < 1 || month > 12) return false
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return day >= 1 && day <= daysInMonth
 }
 
-/**
- * Devuelve un mensaje de error si la fecha es inválida o incompleta, o null si es válida.
- * Solo valida si el campo contiene texto (los campos vacíos se consideran válidos).
- */
-export function getDateValidationError(val: string | null | undefined, touched = false): string | null {
-  if (!val || !val.trim()) return null
-  const v = val.trim()
-  const parts = v.split('/')
+export function getDateValidationError(value: string | null | undefined, touched = false): string | null {
+  if (!value || !value.trim()) return null
+  const trimmed = value.trim()
+  const parts = trimmed.split('/')
 
   if (parts[0] && parts[0].length === 2) {
-    const d = parseInt(parts[0], 10)
-    if (isNaN(d) || d < 1 || d > 31) return 'Día inválido (01 al 31)'
+    const day = Number(parts[0])
+    if (!Number.isInteger(day) || day < 1 || day > 31) return 'Día inválido (01 al 31)'
   }
 
   if (parts[1] && parts[1].length === 2) {
-    const m = parseInt(parts[1], 10)
-    if (isNaN(m) || m < 1 || m > 12) return 'Mes inválido (01 al 12)'
+    const month = Number(parts[1])
+    if (!Number.isInteger(month) || month < 1 || month > 12) return 'Mes inválido (01 al 12)'
   }
 
-  if (v.length >= 10) {
-    const d = parseInt(parts[0], 10)
-    const m = parseInt(parts[1], 10)
-    const y = parseInt(parts[2], 10)
-    if (isNaN(y) || y < 1900 || y > 3000) return 'Año inválido (1900-3000)'
-    const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate()
-    if (d < 1 || d > daysInMonth) return `Día inexistente (${d}/${m}/${y})`
-    if (!isValidDateString(v)) return 'Fecha inválida (dd/mm/aaaa)'
-  } else if (touched && v.length > 0) {
+  if (trimmed.length >= 10) {
+    const [dayString, monthString, yearString] = parts
+    const day = Number(dayString)
+    const month = Number(monthString)
+    const year = Number(yearString)
+    if (!Number.isInteger(year) || year < 1900 || year > 3000) return 'Año inválido (1900-3000)'
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+    if (day < 1 || day > daysInMonth) return `Día inexistente (${day}/${month}/${year})`
+    if (!isValidDateString(trimmed)) return 'Fecha inválida (dd/mm/aaaa)'
+  } else if (touched && trimmed.length > 0) {
     return 'Fecha incompleta (dd/mm/aaaa)'
   }
 
   return null
 }
 
-/**
- * Retorna true si la fecha es válida o si está vacía.
- */
-export function isDateValidOrEmpty(val: string | null | undefined): boolean {
-  if (!val || !val.trim()) return true
-  return getDateValidationError(val, true) === null
-}
-
-function parseDateUtc(v: string): Date | null {
-  const parts = v.trim().split('/')
-  if (parts.length !== 3) return null
-  const [d, m, y] = parts.map((p) => parseInt(p, 10))
-  if (isNaN(d) || isNaN(m) || isNaN(y)) return null
-  return new Date(Date.UTC(y, m - 1, d))
-}
-
-/**
- * Retorna true si la fecha "hasta" es anterior o igual a la fecha "desde" (rango inválido).
- * Compara cronológicamente (no como texto). Si alguna fecha es inválida, retorna false.
- */
-export function isDateRangeInvalid(desde: string | null | undefined, hasta: string | null | undefined): boolean {
-  if (!desde?.trim() || !hasta?.trim()) return false
-  if (!isValidDateString(desde) || !isValidDateString(hasta)) return false
-  const d = parseDateUtc(desde)
-  const h = parseDateUtc(hasta)
-  if (!d || !h) return false
-  return h.getTime() <= d.getTime()
-}
-
-
-/**
- * Compone el nombre completo del agente con el orden acordado:
- * APELLIDO [2º APELLIDO] NOMBRE [2º NOMBRE]
- * Ignora las partes vacías.
- */
-export function composeFullName(parts: {
-  apellido?: string | null
-  segundoApellido?: string | null
-  nombre?: string | null
-  segundoNombre?: string | null
-}): string {
-  return [parts.apellido, parts.segundoApellido, parts.nombre, parts.segundoNombre]
-    .map((v) => (v ?? '').trim())
-    .filter(Boolean)
-    .join(' ')
-}
-
-/**
- * Separa un texto "apellido nombre" en sus partes.
- * La primera palabra queda como apellido y el resto como nombre (comportamiento previo).
- */
-export function splitNombreCompleto(valor: string | null | undefined): { apellido: string; nombre: string } {
-  const partes = (valor ?? '').trim().split(/\s+/)
-  return { apellido: partes[0] ?? '', nombre: partes.slice(1).join(' ') }
-}
-
-/**
- * Formats digits into CUIL format: 00-00000000-0
- * Only accepts numbers and formats as XX-XXXXXXXX-X (11 digits max)
- */
 export function formatCuil(value: string): string {
   if (!value) return ''
   const digits = value.replace(/\D/g, '').slice(0, 11)
@@ -145,31 +61,25 @@ export function formatCuil(value: string): string {
   return `${digits.slice(0, 2)}-${digits.slice(2, 10)}-${digits.slice(10, 11)}`
 }
 
-/**
- * Extracts DNI from a CUIL string.
- * Middle digits of CUIL (after the 2-digit prefix, up to 8 digits).
- */
-export function extractDniFromCuil(cuilValue: string): string {
-  if (!cuilValue) return ''
-  const digits = cuilValue.replace(/\D/g, '').slice(0, 11)
+export function extractDniFromCuil(value: string): string {
+  if (!value) return ''
+  const digits = value.replace(/\D/g, '').slice(0, 11)
   if (digits.length <= 2) return ''
   if (digits.length <= 10) return digits.slice(2)
   return digits.slice(2, 10)
 }
 
-/**
- * Filters input to only allow letters and spaces (including accents and ñ).
- */
 export function formatLettersOnly(value: string): string {
   if (!value) return ''
   return value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g, '')
 }
 
-/**
- * Filters input to only allow numeric digits.
- */
 export function formatDigitsOnly(value: string): string {
   if (!value) return ''
   return value.replace(/\D/g, '')
 }
 
+export function splitNombreCompleto(value: string | null | undefined): { apellido: string; nombre: string } {
+  const parts = (value ?? '').trim().split(/\s+/)
+  return { apellido: parts[0] ?? '', nombre: parts.slice(1).join(' ') }
+}

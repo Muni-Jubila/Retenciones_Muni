@@ -68,6 +68,10 @@ export async function loginUsuario(
       return { ok: false, error: 'Usuario o contraseña incorrectos.' }
     }
 
+    if (!usuario.ES_RETENCIONES) {
+      return { ok: false, error: 'Tu usuario no tiene acceso al sistema de Retenciones.' }
+    }
+
     // Compatibilidad de una sola vez para usuarios creados manualmente en SQL.
     // La contraseña se reemplaza por un hash antes de finalizar el login.
     if (!tieneHashBcrypt) {

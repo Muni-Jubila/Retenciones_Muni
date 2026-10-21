@@ -49,13 +49,13 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       <div className="w-full max-w-md mx-4">
         <div className="bg-white rounded-2xl shadow-lg p-8">
           {/* Header */}
-          <div className="relative w-full h-28 overflow-hidden mb-5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/jubila-logo.png"
-              alt="Jubila - Sistema de Gestión Previsional"
-              className="absolute left-0 top-1/2 w-full h-auto -translate-y-1/2"
-            />
+          <div className="flex flex-col items-center mb-6">
+            <p className="text-xl font-black uppercase tracking-[0.3em] text-[#1e3a8a]">
+              Retenciones
+            </p>
+            <p className="mt-1 text-[10px] font-medium uppercase tracking-widest text-slate-400">
+              Municipalidad de Córdoba
+            </p>
           </div>
 
           {/* Title */}

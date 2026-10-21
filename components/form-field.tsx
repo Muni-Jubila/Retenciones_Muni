@@ -1,18 +1,18 @@
+'use client'
+
 import { useState } from 'react'
 import { AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { formatExpediente, formatDate, formatCuil, formatLettersOnly, formatDigitsOnly, getDateValidationError } from '@/lib/format-utils'
+import { formatCuil, formatDate, formatDigitsOnly, formatLettersOnly, getDateValidationError } from '@/lib/format-utils'
 
 interface FieldProps {
   label: string
   value: string
-  onChange?: (v: string) => void
+  onChange?: (value: string) => void
   readOnly?: boolean
   placeholder?: string
   className?: string
-  type?: string
-  small?: boolean
-  mask?: 'expediente' | 'date' | 'cuil' | 'letters' | 'digits'
+  mask?: 'date' | 'cuil' | 'letters' | 'digits'
   error?: string | null
   forceTouched?: boolean
 }
@@ -24,45 +24,22 @@ export function FormField({
   readOnly = false,
   placeholder,
   className,
-  type = 'text',
-  small = false,
   mask,
   error,
   forceTouched = false,
 }: FieldProps) {
   const [touched, setTouched] = useState(false)
 
-  const effectiveMask =
-    mask ??
-    (placeholder === '000.000/00'
-      ? 'expediente'
-      : placeholder === 'dd/mm/aaaa'
-      ? 'date'
-      : placeholder === '20-00000000-0'
-      ? 'cuil'
-      : undefined)
-
-  const isDate = effectiveMask === 'date'
-  // Validación de fecha solo si tiene algún valor cargado
   const isTouched = forceTouched || touched
-  const dateError = error ?? (isDate ? getDateValidationError(value, isTouched) : null)
+  const dateError = error ?? (mask === 'date' ? getDateValidationError(value, isTouched) : null)
 
-  const handleChange = (rawVal: string) => {
+  const handleChange = (rawValue: string) => {
     if (!onChange) return
-
-    if (effectiveMask === 'expediente') {
-      onChange(formatExpediente(rawVal))
-    } else if (effectiveMask === 'date') {
-      onChange(formatDate(rawVal))
-    } else if (effectiveMask === 'cuil') {
-      onChange(formatCuil(rawVal))
-    } else if (effectiveMask === 'letters') {
-      onChange(formatLettersOnly(rawVal))
-    } else if (effectiveMask === 'digits') {
-      onChange(formatDigitsOnly(rawVal))
-    } else {
-      onChange(rawVal)
-    }
+    if (mask === 'date') onChange(formatDate(rawValue))
+    else if (mask === 'cuil') onChange(formatCuil(rawValue))
+    else if (mask === 'letters') onChange(formatLettersOnly(rawValue))
+    else if (mask === 'digits') onChange(formatDigitsOnly(rawValue))
+    else onChange(rawValue)
   }
 
   return (
@@ -77,19 +54,16 @@ export function FormField({
           {label}
         </label>
         {dateError && (
-          <span
-            className="text-[10px] text-rose-600 font-bold truncate flex items-center gap-1"
-            title={dateError}
-          >
+          <span className="text-[10px] text-rose-600 font-bold truncate flex items-center gap-1" title={dateError}>
             <AlertCircle className="w-3 h-3 flex-shrink-0 text-rose-600" />
             {dateError}
           </span>
         )}
       </div>
       <input
-        type={type}
+        type="text"
         value={value}
-        onChange={(e) => handleChange(e.target.value)}
+        onChange={(event) => handleChange(event.target.value)}
         onBlur={() => setTouched(true)}
         readOnly={readOnly}
         placeholder={placeholder ?? '—'}
@@ -100,95 +74,21 @@ export function FormField({
           dateError
             ? 'border-rose-500 bg-rose-50/40 text-rose-900 placeholder:text-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-600'
             : 'border-slate-200 text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-[#1e3a8a]',
-          readOnly && 'bg-slate-50 text-slate-500 cursor-default',
-          small ? 'text-xs py-1' : 'text-sm'
+          readOnly && 'bg-slate-50 text-slate-500 cursor-default'
         )}
       />
     </div>
   )
 }
 
-interface SelectFieldProps {
-  label: string
-  value: string
-  onChange?: (v: string) => void
-  options: { value: string; label: string }[]
-  className?: string
-  disabled?: boolean
-  placeholder?: string
-}
-
-export function SelectField({ label, value, onChange, options, className, disabled = false, placeholder }: SelectFieldProps) {
-  return (
-    <div className={cn('flex flex-col gap-1', className)}>
-      <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider truncate">
-        {label}
-      </label>
-      <select
-        value={value}
-        onChange={(e) => onChange?.(e.target.value)}
-        disabled={disabled}
-        className={cn(
-          'rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-[#1e3a8a] transition cursor-pointer',
-          disabled && 'bg-slate-50 text-slate-500 cursor-default',
-          !value && 'text-slate-400'
-        )}
-      >
-        {placeholder && (
-          <option value="" disabled>
-            {placeholder}
-          </option>
-        )}
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  )
-}
-
-interface BadgeFieldProps {
-  label: string
-  value: string
-  color?: 'blue' | 'amber' | 'green' | 'red' | 'slate'
-  className?: string
-}
-
-export function BadgeField({ label, value, color = 'blue', className }: BadgeFieldProps) {
-  const colorMap = {
-    blue: 'bg-blue-50 text-blue-700 border-blue-200',
-    amber: 'bg-amber-50 text-amber-700 border-amber-200',
-    green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    red: 'bg-red-50 text-red-700 border-red-200',
-    slate: 'bg-slate-50 text-slate-600 border-slate-200',
-  }
-  return (
-    <div className={cn('flex flex-col gap-1', className)}>
-      <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider truncate">
-        {label}
-      </label>
-      <div
-        className={cn(
-          'rounded-md border px-2.5 py-1.5 text-sm font-semibold text-center',
-          colorMap[color]
-        )}
-      >
-        {value || '—'}
-      </div>
-    </div>
-  )
-}
-
-interface CardProps {
+interface SectionCardProps {
   title: string
   children: React.ReactNode
   className?: string
   headerClassName?: string
 }
 
-export function SectionCard({ title, children, className, headerClassName }: CardProps) {
+export function SectionCard({ title, children, className, headerClassName }: SectionCardProps) {
   return (
     <div className={cn('bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm', className)}>
       <div className={cn('px-4 py-2.5 bg-slate-50 border-b border-slate-200', headerClassName)}>

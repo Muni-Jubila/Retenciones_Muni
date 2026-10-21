@@ -1,252 +1,71 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  Search, UserCircle, Pencil, Save, FileText, Upload,
-  Printer, Send, Archive, CheckSquare, GitBranch, X, CheckCircle2,
-  Loader2, AlertCircle, AlertTriangle, MessageSquare, Users,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  MessageSquare,
+  Pencil,
+  Save,
+  Search,
+  UserCircle,
+  Users,
+  X,
 } from 'lucide-react'
-import {
-  CAUSA_BAJA_OPTIONS,
-  BOTONES_POR_CAUSA_BAJA,
-  type JubilacionRecord,
-  type BtnExtra,
-  type TrazabilidadEntry,
-} from '@/lib/jubilaciones-data'
-import { FormField, SelectField, SectionCard } from '@/components/form-field'
-import { formatExpediente, formatDate, formatCuil, extractDniFromCuil, getDateValidationError, isDateRangeInvalid, composeFullName, splitNombreCompleto } from '@/lib/format-utils'
-import { buscarAgentesParaGrilla, searchAgentes, updateJubila, createJubila, createAgente, recuperarAgente, getLastRecord } from '@/app/actions/agentes'
-import { GestorArchivos } from '@/components/gestor-archivos'
-import { PavAceptacionRechazo, PavPaseSecretaria, PavSolicitud, PavPaseArchivo, PavDesistido, PaseReparticion, RenunciaRazonesParticulares, InvalidesProvisoria, RenunciaForm, RenunciaProvisoriaForm } from '@/components/pdf/PAVForms'
+import { actualizarEmpleado, buscarEmpleados, getUltimoEmpleado } from '@/app/actions/empleados'
+import { type Empleado } from '@/lib/empleados'
+import { getDateValidationError } from '@/lib/format-utils'
+import { FormField, SectionCard } from '@/components/form-field'
 
-// Normalize a string: lowercase + remove diacritics
-function normalize(str: string): string {
-  return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+const EDIT_FIELDS: { key: keyof Empleado; label: string }[] = [
+  { key: 'cuil', label: 'CUIL' },
+  { key: 'dni', label: 'DNI' },
+  { key: 'nombreCompleto', label: 'Apellido y Nombres' },
+  { key: 'telefono', label: 'Teléfono' },
+  { key: 'correo', label: 'Correo Electrónico' },
+  { key: 'programa', label: 'Programa' },
+  { key: 'secretaria', label: 'Secretaría' },
+  { key: 'cargo', label: 'Cargo' },
+  { key: 'antiguedadRecibo', label: 'Antigüedad Actual' },
+  { key: 'antiguedadLicencias', label: 'Antigüedad al 31/12' },
+  { key: 'fechaNacimiento', label: 'Fecha de Nacimiento' },
+  { key: 'edadActual', label: 'Edad Actual' },
+]
+
+function getDiffs(original: Empleado, current: Empleado) {
+  return EDIT_FIELDS
+    .filter((field) => (original[field.key] ?? '') !== (current[field.key] ?? ''))
+    .map((field) => ({
+      label: field.label,
+      oldVal: original[field.key] || '—',
+      newVal: current[field.key] || '—',
+    }))
 }
 
-// Etiquetas legibles para los campos (mensajes de error al usuario)
-const FIELD_LABELS: Record<string, string> = {
-  nroTramite: 'Número de Trámite',
-  dni: 'DNI',
-  cuil: 'CUIL',
-  apellidoNombres: 'Apellido y Nombres',
-  apellido: 'Apellido',
-  segundoApellido: '2º Apellido',
-  nombre: 'Nombre',
-  segundoNombre: '2º Nombre',
-  fechaNacimiento: 'Fecha de Nacimiento',
-  fBaja: 'Fecha Baja (Información Laboral)',
-  nroExpMunRenuncia: 'Nº Exp. Mun. Renuncia',
-  jNroExpCaja: 'J. Nº Exp. Caja',
-  nroResRenCaja: 'Nº Res. Caja',
-  nroExpCajDeneg: 'Nº Exp. Caj. Deneg.',
-  fSolicitud: 'Fecha Solicitud (Pasividad)',
-  fEstimadaJOrd: 'Fecha Estimada Jubilación Ordinaria',
-  nroExpPasividad: 'Nº Expediente Pasividad',
-  fFirmaConvenio: 'Fecha Firma Convenio',
-  fInicioPasividad: 'Fecha Inicio Pasividad',
-  observacionPasividad: 'Observaciones de Pasividad',
-  notificacionArt43: 'Notificación Art. 43',
-  nExpArt43SuspPago: 'Nº Expte. Suspensión de Pago',
-  observacion: 'Observaciones',
-  nroResRenov: 'Número Resolución Renovación',
-  nroExpMun: 'N.º Expte. Mun. Renuncia. Prov',
-  fechaDesdeExp: 'Fecha Desde Provisoria',
-  fechaHastaExp: 'Fecha Hasta Provisoria',
-  jNroExpCajaRenov: 'J. Nº Exp. Caja (Renovación)',
-  nroDcto: 'N.º Decreto/Resolución Municipal',
-}
-
-// Helper para validar todas las fechas cargadas de un registro
-function getRecordDateErrors(record: JubilacionRecord): { label: string; error: string }[] {
-  const errors: { label: string; error: string }[] = []
-
-  const check = (val: string | undefined, label: string) => {
-    if (!val || !val.trim()) return // Solo valida si se cargó la fecha
-    const err = getDateValidationError(val, true)
-    if (err) {
-      errors.push({ label, error: err })
-    }
-  }
-
-  check(record.fechaNacimiento, 'Fecha de Nacimiento')
-  check(record.fBaja, 'Fecha Baja (Información Laboral)')
-  check(record.fSolicitud, 'Fecha de Solicitud (Pasividad)')
-  check(record.fEstimadaJOrd, 'Fecha Estimada Jubilación Ordinaria (Pasividad)')
-  check(record.fFirmaConvenio, 'Fecha Firma Convenio (Pasividad)')
-  check(record.fInicioPasividad, 'Fecha Inicio Pasividad (Pasividad)')
-  check(record.notificacionArt43, 'Notificación Artículo 43')
-
-  record.renovaciones?.forEach((rv, idx) => {
-    check(rv.fechaDesdeExp, `Renovación #${idx + 1} - Fecha Desde`)
-    check(rv.fechaHastaExp, `Renovación #${idx + 1} - Fecha Hasta`)
-    // El rango es inválido si la fecha "hasta" es menor o igual a la "desde"
-    if (rv.fechaDesdeExp?.trim() && rv.fechaHastaExp?.trim() && isDateRangeInvalid(rv.fechaDesdeExp, rv.fechaHastaExp)) {
-      errors.push({
-        label: `OTORGAMIENTO Y RENOVACIÓN #${idx + 1} - Rango de fechas`,
-        error: 'La fecha "hasta" debe ser posterior a la fecha "desde".',
-      })
-    }
-  })
-
-  return errors
-}
-
-// Render an icon by name string
-function BtnIcon({ name }: { name: string }) {
-  const cls = 'w-3.5 h-3.5'
-  if (name === 'printer')      return <Printer      className={cls} />
-  if (name === 'send')         return <Send         className={cls} />
-  if (name === 'archive')      return <Archive      className={cls} />
-  if (name === 'file-text')    return <FileText     className={cls} />
-  if (name === 'check-square') return <CheckSquare  className={cls} />
-  return <FileText className={cls} />
-}
-
-interface FieldDiff {
-  section: string
-  label: string
-  oldVal: string
-  newVal: string
-}
-
-function getRecordDiffs(initial: JubilacionRecord | null, current: JubilacionRecord | null): FieldDiff[] {
-  if (!initial || !current) return []
-  const diffs: FieldDiff[] = []
-
-  const check = (section: string, label: string, key: keyof JubilacionRecord) => {
-    const oldV = String(initial[key] ?? '').trim()
-    const newV = String(current[key] ?? '').trim()
-    if (oldV !== newV) {
-      diffs.push({ section, label, oldVal: oldV || '(vacío)', newVal: newV || '(vacío)' })
-    }
-  }
-
-  // Laboral
-  if (initial.causaBaja !== current.causaBaja) {
-    const oldLabel = CAUSA_BAJA_OPTIONS.find((b) => b.value === initial.causaBaja)?.label ?? initial.causaBaja
-    const newLabel = CAUSA_BAJA_OPTIONS.find((b) => b.value === current.causaBaja)?.label ?? current.causaBaja
-    diffs.push({ section: 'INFORMACIÓN LABORAL', label: 'Causa de Baja', oldVal: oldLabel, newVal: newLabel })
-  }
-  check('INFORMACIÓN LABORAL', 'Número de Trámite', 'nroTramite')
-  check('INFORMACIÓN LABORAL', 'Fecha Baja', 'fBaja')
-  check('INFORMACIÓN LABORAL', 'Nº Exp. Mun. Renuncia', 'nroExpMunRenuncia')
-  check('INFORMACIÓN LABORAL', 'J. Nº Exp. Caja', 'jNroExpCaja')
-  check('INFORMACIÓN LABORAL', 'Nº Res. Caja', 'nroResRenCaja')
-  check('INFORMACIÓN LABORAL', 'Nº Exp. Caj. Deneg.', 'nroExpCajDeneg')
-
-  // Datos Personales
-  check('DATOS PERSONALES', 'CUIL', 'cuil')
-  check('DATOS PERSONALES', 'DNI', 'dni')
-  check('DATOS PERSONALES', 'Apellido y Nombres', 'apellidoNombres')
-  check('DATOS PERSONALES', 'Teléfono', 'telefono')
-  check('DATOS PERSONALES', 'Correo Electrónico', 'correo')
-  check('DATOS PERSONALES', 'Fecha de Nacimiento', 'fechaNacimiento')
-  if (String(initial.estadoActivo) !== String(current.estadoActivo)) {
-    diffs.push({
-      section: 'DATOS PERSONALES',
-      label: 'Estado',
-      oldVal: initial.estadoActivo ? 'Activo' : 'Inactivo',
-      newVal: current.estadoActivo ? 'Activo' : 'Inactivo',
-    })
-  }
-
-  // Renovaciones
-  current.renovaciones.forEach((rv, i) => {
-    const oldRv = initial.renovaciones[i] || { nroResRenov: '', nroExpMun: '', fechaDesdeExp: '', fechaHastaExp: '', nroDcto: '' }
-    if (oldRv.nroResRenov !== rv.nroResRenov) {
-      diffs.push({ section: 'OTORGAMIENTO Y RENOVACIÓN PROVISORIAS', label: `Fila #${i + 1} Número Resolución Caja`, oldVal: oldRv.nroResRenov || '(vacío)', newVal: rv.nroResRenov || '(vacío)' })
-    }
-    if (oldRv.nroExpMun !== rv.nroExpMun) {
-      diffs.push({ section: 'OTORGAMIENTO Y RENOVACIÓN PROVISORIAS', label: `Fila #${i + 1} N.º Expte. Mun. Renuncia. Prov`, oldVal: oldRv.nroExpMun || '(vacío)', newVal: rv.nroExpMun || '(vacío)' })
-    }
-    if (oldRv.fechaDesdeExp !== rv.fechaDesdeExp) {
-      diffs.push({ section: 'OTORGAMIENTO Y RENOVACIÓN PROVISORIAS', label: `Fila #${i + 1} Fecha Desde`, oldVal: oldRv.fechaDesdeExp || '(vacío)', newVal: rv.fechaDesdeExp || '(vacío)' })
-    }
-    if (oldRv.fechaHastaExp !== rv.fechaHastaExp) {
-      diffs.push({ section: 'OTORGAMIENTO Y RENOVACIÓN PROVISORIAS', label: `Fila #${i + 1} Fecha Hasta`, oldVal: oldRv.fechaHastaExp || '(vacío)', newVal: rv.fechaHastaExp || '(vacío)' })
-    }
-    if (oldRv.nroDcto !== rv.nroDcto) {
-      diffs.push({ section: 'OTORGAMIENTO Y RENOVACIÓN PROVISORIAS', label: `Fila #${i + 1} Decreto/Resolución`, oldVal: oldRv.nroDcto || '(vacío)', newVal: rv.nroDcto || '(vacío)' })
-    }
-  })
-
-  // Pasividad
-  check('PASIVIDAD', 'Fecha de Solicitud', 'fSolicitud')
-  check('PASIVIDAD', 'Fecha Est. Jub. Ordinaria', 'fEstimadaJOrd')
-  check('PASIVIDAD', 'Número Expediente Pasividad', 'nroExpPasividad')
-  check('PASIVIDAD', 'Fecha Firma Convenio', 'fFirmaConvenio')
-  check('PASIVIDAD', 'Fecha Inicio Pasividad', 'fInicioPasividad')
-  check('PASIVIDAD', 'Observaciones Pasividad', 'observacionPasividad')
-
-  // Notificaciones
-  check('NOTIFICACIONES Y SUSPENSIONES', 'Notificación Art. 43', 'notificacionArt43')
-  check('NOTIFICACIONES Y SUSPENSIONES', 'N. Exp. Art. 43 Susp. Pago', 'nExpArt43SuspPago')
-
-  // Observaciones
-  check('OBSERVACIONES', 'Observación', 'observacion')
-
-  return diffs
-}
-
-interface PanelPrincipalProps {
-  externalDni?: string | null
-  onExternalDniConsumed?: () => void
-}
-
-export default function PanelPrincipal({ externalDni, onExternalDniConsumed }: PanelPrincipalProps = {}) {
-  const [search, setSearch]               = useState('')
-  const [selectedId, setSelectedId]       = useState<string | null>(null)
-  const [records, setRecords]             = useState<JubilacionRecord[]>([])
-  const [editing, setEditing]                   = useState(false)
-  const [notFoundPopup, setNotFoundPopup]       = useState(false)
-  const [showTrazabilidad, setShowTrazabilidad] = useState(false)
-  const [showConfirmPopup, setShowConfirmPopup] = useState(false)
-  const [showSuccessPopup, setShowSuccessPopup] = useState(false)
-  const [showEditConfirmPopup, setShowEditConfirmPopup] = useState(false)
-  const [showEditSuccessPopup, setShowEditSuccessPopup] = useState(false)
-
-  const [isCreatingNew, setIsCreatingNew]               = useState(false)
-  const [previousSelectedId, setPreviousSelectedId]     = useState<string | null>(null)
-  const [initialSnapshot, setInitialSnapshot]           = useState<JubilacionRecord | null>(null)
-
-  // ── Grilla de resultados del buscador ────────────────────────────────────
-  // gridIds mantiene el ORDEN de la grilla (exactos → prefijo → contiene);
-  // los registros quedan en `records` aunque no estén en los resultados, para
-  // que el agente cargado siga visible abajo hasta elegir otra fila.
-  const [gridIds, setGridIds] = useState<string[]>([])
+export default function PanelPrincipal() {
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<Empleado | null>(null)
+  const [snapshot, setSnapshot] = useState<Empleado | null>(null)
+  const [results, setResults] = useState<Empleado[]>([])
   const [showGrid, setShowGrid] = useState(false)
-
-  // ── Loading / error states ───────────────────────────────────────────────
-  const [loadingSearch, setLoadingSearch] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [loadingRecord, setLoadingRecord] = useState(false)
-  const [savingRecord, setSavingRecord]   = useState(false)
-  const [globalError, setGlobalError]     = useState<string | null>(null)
-  const [fieldErrors, setFieldErrors]     = useState<Record<string, string>>({})
-  const [fieldErrorPopup, setFieldErrorPopup] = useState<{
-    title: string
-    message: string
-    items: { label: string; error: string }[]
-  } | null>(null)
-  const [forceTouchedDateErrors, setForceTouchedDateErrors] = useState(false)
-
-  // ── Modal Gestionar Archivos ─────────────────────────────────────────────
-  const [showArchivos, setShowArchivos]       = useState(false)
-
+  const [loadingSearch, setLoadingSearch] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [globalError, setGlobalError] = useState<string | null>(null)
+  const [notFoundPopup, setNotFoundPopup] = useState(false)
+  const [showEditConfirmPopup, setShowEditConfirmPopup] = useState(false)
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false)
   const detailRef = useRef<HTMLDivElement>(null)
-  const selected  = records.find((r) => r.id === selectedId) ?? null
 
-  // ── Carga inicial: último registro al montar ─────────────────────────────
   useEffect(() => {
     let cancelled = false
     async function loadInitial() {
       setLoadingRecord(true)
       try {
-        const last = await getLastRecord()
-        if (!cancelled && last) {
-          setRecords([last])
-          setSelectedId(last.id)
-        }
+        const last = await getUltimoEmpleado()
+        if (!cancelled && last) setSelected(last)
       } catch {
         // No bloqueamos el panel si falla la carga inicial
       } finally {
@@ -254,582 +73,136 @@ export default function PanelPrincipal({ externalDni, onExternalDniConsumed }: P
       }
     }
     loadInitial()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [])
 
-  // ── Search via Server Action ─────────────────────────────────────────────
-  const handleSearchAndLoad = useCallback(async () => {
-    const q = search.trim()
-    if (!q) return
+  const handleSelect = (empleado: Empleado) => {
+    setSelected(empleado)
+    setShowGrid(false)
+    setEditing(false)
+    setSnapshot(null)
+    setGlobalError(null)
+    setTimeout(() => {
+      detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+  }
+
+  const handleSearchAndLoad = async () => {
+    const query = search.trim()
+    if (!query) return
     setLoadingSearch(true)
     setGlobalError(null)
     try {
-      const results = await buscarAgentesParaGrilla(q)
-      aplicarResultados(results)
-    } catch (err) {
+      const encontrados = await buscarEmpleados(query)
+      if (encontrados.length === 0) {
+        setShowGrid(false)
+        setNotFoundPopup(true)
+      } else if (encontrados.length === 1) {
+        setShowGrid(false)
+        handleSelect(encontrados[0])
+      } else {
+        setResults(encontrados)
+        setShowGrid(true)
+      }
+    } catch {
       setGlobalError('Error al buscar en la base de datos. Verifique la conexión.')
     } finally {
       setLoadingSearch(false)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search])
-
-  // ── Búsqueda disparada externamente desde el widget del sidebar ───────────
-  useEffect(() => {
-    if (!externalDni) return
-    let cancelled = false
-    async function loadExternal() {
-      setLoadingSearch(true)
-      setGlobalError(null)
-      try {
-        const results = await buscarAgentesParaGrilla(externalDni!)
-        if (!cancelled) {
-          setSearch(externalDni!)
-          aplicarResultados(results)
-        }
-      } catch {
-        if (!cancelled) setGlobalError('Error al buscar en la base de datos. Verifique la conexión.')
-      } finally {
-        if (!cancelled) setLoadingSearch(false)
-        onExternalDniConsumed?.()
-      }
-    }
-    loadExternal()
-    return () => { cancelled = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [externalDni])
-
-  // ── Mutations ────────────────────────────────────────────────────────────────
-  const clearFieldError = (field: string) => {
-    setFieldErrors((prev) => {
-      if (!(field in prev)) return prev
-      const next = { ...prev }
-      delete next[field]
-      return next
-    })
   }
 
-  const update = (field: keyof JubilacionRecord, value: string) => {
-    setRecords((prev) =>
-      prev.map((r) => (r.id === selectedId ? { ...r, [field]: value } : r))
-    )
-    clearFieldError(field)
+  const update = (field: keyof Empleado, value: string) => {
+    setSelected((prev) => (prev ? { ...prev, [field]: value } : prev))
   }
 
-  /**
-   * Actualiza una de las 4 partes del nombre y recompone el nombre completo
-   * con el orden APELLIDO [2º APELLIDO] NOMBRE [2º NOMBRE].
-   */
-  const updateNombre = (
-    field: 'apellido' | 'segundoApellido' | 'nombre' | 'segundoNombre',
-    value: string
-  ) => {
-    setRecords((prev) =>
-      prev.map((r) => {
-        if (r.id !== selectedId) return r
-        const next = { ...r, [field]: value }
-        return { ...next, apellidoNombres: composeFullName(next) }
-      })
-    )
-    clearFieldError(field)
-    clearFieldError('apellidoNombres')
-  }
-
-  const updateCuil = (rawVal: string) => {
-    const cuil = formatCuil(rawVal)
-    const dni = extractDniFromCuil(rawVal)
-    setRecords((prev) =>
-      prev.map((r) => (r.id === selectedId ? { ...r, cuil, dni } : r))
-    )
-    clearFieldError('cuil')
-    clearFieldError('dni')
-  }
-
-  const updateRenovacion = (idx: number, field: string, value: string) => {
-    setRecords((prev) =>
-      prev.map((r) => {
-        if (r.id !== selectedId) return r
-        const renovaciones = r.renovaciones.map((rv, i) =>
-          i === idx ? { ...rv, [field]: value } : rv
-        )
-        return { ...r, renovaciones }
-      })
-    )
-  }
-
-  // ── Select record (local, ya cargado en records[]) ─────────────────────
-  const handleSelectId = (id: string) => {
-    setSelectedId(id)
-    setShowGrid(false)
-    setEditing(false)
-    setIsCreatingNew(false)
-    setInitialSnapshot(null)
-    setForceTouchedDateErrors(false)
-    setFieldErrors({})
-    setTimeout(
-      () => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-      50
-    )
-  }
-
-  /**
-   * Aplica el resultado de una búsqueda del panel principal:
-   * - 0 coincidencias → popup "sin resultados", no toca nada.
-   * - 1 coincidencia  → carga directa en los bloques de abajo, sin grilla.
-   * - N coincidencias → guarda todo en `records` (merge, para no perder el
-   *    agente cargado) y muestra la grilla; NO cambia la selección hasta que
-   *    se elija una fila.
-   */
-  const aplicarResultados = useCallback((results: JubilacionRecord[]) => {
-    if (results.length === 0) {
-      setNotFoundPopup(true)
-      return
-    }
-
-    // Merge por id: el registro que sigue cargado en los bloques debe seguir
-    // disponible aunque no esté dentro de los resultados de esta búsqueda.
-    setRecords((prev) => {
-      const porId = new Map(prev.map((r) => [r.id, r]))
-      for (const r of results) porId.set(r.id, r)
-      return [...porId.values()]
-    })
-
-    if (results.length === 1) {
-      setShowGrid(false)
-      handleSelectId(results[0].id)
-    } else {
-      setGridIds(results.map((r) => r.id))
-      setShowGrid(true)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const handleNew = () => {
-    if (editing) return
-    const newId = `nuevo-${Date.now()}`
-    setPreviousSelectedId(selectedId)
-    const blank: JubilacionRecord = {
-      id: newId,
-      cuil: '',
-      dni: '',
-      apellidoNombres: '',
-      nombre: '',
-      segundoNombre: '',
-      apellido: '',
-      segundoApellido: '',
-      sexo: '',
-      telefono: '',
-      correo: '',
-      programa: '',
-      secretaria: '',
-      cargo: '',
-      antiguedadRecibo: '',
-      antiguedadLicencias: '',
-      fechaNacimiento: '',
-      edadActual: '',
-      fechaEstimadaJubilacionOrdinaria: '',
-      noCumpleAportesEdadAvanzada: false,
-      estadoActivo: true,
-      trazabilidad: [],
-      causaBaja: '', nroTramite: '',
-      fBaja: '', nroExpMunRenuncia: '', jNroExpCaja: '', nroResRenCaja: '',
-      nroExpCajDeneg: '', fInicExpMunPav: '', nroExpedienteMun: '',
-      fInfPrevCaja: '', fecha: '', anios: '', meses: '', dias: '', edadReq: '',
-      renovaciones: [
-        { nroResRenov: '', nroExpMun: '', fechaDesdeExp: '', fechaHastaExp: '', jNroExpCaja: '', nroDcto: '' },
-        { nroResRenov: '', nroExpMun: '', fechaDesdeExp: '', fechaHastaExp: '', jNroExpCaja: '', nroDcto: '' },
-        { nroResRenov: '', nroExpMun: '', fechaDesdeExp: '', fechaHastaExp: '', jNroExpCaja: '', nroDcto: '' },
-      ],
-      notificacionArt43: '', nExpArt43SuspPago: '', fSolicitud: '',
-      fEstimadaJOrd: '', nroExpPasividad: '', fFirmaConvenio: '',
-      fInicioPasividad: '', observacionPasividad: '', observacion: '',
-    }
-    setInitialSnapshot(JSON.parse(JSON.stringify(blank)))
-    setRecords((prev) => [blank, ...prev])
-    setSelectedId(newId)
-    setIsCreatingNew(true)
+  const startEdit = () => {
+    if (!selected) return
+    setSnapshot(selected)
     setEditing(true)
-    setForceTouchedDateErrors(false)
-    setFieldErrors({})
-  }
-
-  const handleStartEdit = () => {
-    if (selected) {
-      setInitialSnapshot(JSON.parse(JSON.stringify(selected)))
-      setIsCreatingNew(false)
-      setEditing(true)
-      setForceTouchedDateErrors(false)
-      setFieldErrors({})
-      setFieldErrorPopup(null)
-    }
+    setGlobalError(null)
   }
 
   const handleCancelEdit = () => {
-    if (isCreatingNew && selectedId) {
-      setRecords((prev) => prev.filter((r) => r.id !== selectedId))
-      setSelectedId(previousSelectedId ?? records.find((r) => r.id !== selectedId)?.id ?? null)
-    } else if (initialSnapshot && selectedId) {
-      setRecords((prev) => prev.map((r) => (r.id === selectedId ? initialSnapshot : r)))
-    }
+    if (snapshot) setSelected(snapshot)
     setEditing(false)
-    setIsCreatingNew(false)
-    setInitialSnapshot(null)
-    setForceTouchedDateErrors(false)
-    setFieldErrors({})
-  }
-
-  const handleToggleEdit = () => {
-    if (editing) {
-      if (selected) {
-        const dateErrors = getRecordDateErrors(selected)
-        if (dateErrors.length > 0) {
-          setForceTouchedDateErrors(true)
-          setFieldErrorPopup({
-            title: 'No se pueden guardar los cambios',
-            message: 'Revisá los campos marcados en rojo: tienen fechas con formato incorrecto o incompletas.',
-            items: dateErrors,
-          })
-          return
-        }
-      }
-      if (isCreatingNew) {
-        setShowConfirmPopup(true)
-      } else {
-        setShowEditConfirmPopup(true)
-      }
-    } else {
-      setForceTouchedDateErrors(false)
-      handleStartEdit()
-    }
-  }
-
-  const handleConfirmRegistration = async () => {
-    if (!selected) return
-    setSavingRecord(true)
     setGlobalError(null)
-    setFieldErrors({})
-    try {
-      const result = await createAgente(selected)
-      if (result.ok && result.id) {
-        // Actualizar el id temporal por el real de DB
-        setRecords((prev) =>
-          prev.map((r) => (r.id === selected.id ? (result.record ?? { ...r, id: result.id! }) : r))
-        )
-        setSelectedId(result.id)
-        setShowConfirmPopup(false)
-        setEditing(false)
-        setIsCreatingNew(false)
-        setInitialSnapshot(null)
-        setForceTouchedDateErrors(false)
-        setShowSuccessPopup(true)
-      } else if (result.agenteBorrado) {
-        // El DNI pertenece a un agente dado de baja → ofrecer recuperarlo
-        setShowConfirmPopup(false)
-        const recuperar = window.confirm(
-          `El documento ${result.agenteBorrado.dni} corresponde al agente "${result.agenteBorrado.apellidoNombres}", que se encuentra dado de baja. ¿Desea recuperarlo?`
-        )
-        if (recuperar) {
-          const rec = await recuperarAgente(result.agenteBorrado.idAgente)
-          if (rec.ok && rec.record) {
-            setRecords((prev) =>
-              prev.map((r) => (r.id === selected.id ? (rec.record ?? r) : r))
-            )
-            setSelectedId(rec.record.id)
-            setEditing(false)
-            setIsCreatingNew(false)
-            setInitialSnapshot(null)
-            setForceTouchedDateErrors(false)
-            setShowSuccessPopup(true)
-          } else {
-            setGlobalError(rec.error ?? 'Error al recuperar el agente.')
-          }
-        } else {
-          setGlobalError(result.error ?? 'Error al guardar el agente.')
-        }
-      } else {
-        if (result.field && result.error) {
-          setFieldErrors((prev) => ({ ...prev, [result.field as string]: result.error as string }))
-          setFieldErrorPopup({
-            title: 'No se pueden guardar los cambios',
-            message: 'Revisá los campos marcados en rojo antes de volver a guardar.',
-            items: [
-              {
-                label: FIELD_LABELS[result.field] ?? (result.field as string),
-                error: result.error as string,
-              },
-            ],
-          })
-        } else {
-          setGlobalError(result.error ?? 'Error al guardar el agente.')
-        }
-        setShowConfirmPopup(false)
-      }
-    } catch (err) {
-      setGlobalError('Error inesperado al guardar. Intente nuevamente.')
-      setShowConfirmPopup(false)
-    } finally {
-      setSavingRecord(false)
-    }
   }
 
-  const handleConfirmEdit = async () => {
-    if (!selected) return
-    setSavingRecord(true)
-    setGlobalError(null)
-    setFieldErrors({})
-    try {
-      // Si el registro es un agente sin JUBILA (id con prefijo 'agente-'), crear en vez de actualizar
-      const isAgenteOnly = selected.id.startsWith('agente-')
-
-      let ok = false
-      let errorMsg: string | undefined
-      let errorField: string | undefined
-      let createdId: string | undefined
-      let updatedRecord: JubilacionRecord | undefined
-
-      if (isAgenteOnly) {
-        const result = await createJubila(selected)
-        ok = result.ok
-        errorMsg = result.error
-        errorField = result.field
-        createdId = result.id
-        updatedRecord = result.record
-      } else {
-        const result = await updateJubila(selected.id, selected)
-        ok = result.ok
-        errorMsg = result.error
-        errorField = result.field
-        updatedRecord = result.record
-      }
-
-      if (ok) {
-        // Actualizar el estado local con el registro fresco de DB (incluyendo la trazabilidad actualizada)
-        const targetId = createdId ?? selected.id
-        setRecords((prev) =>
-          prev.map((r) =>
-            r.id === selected.id
-              ? (updatedRecord ?? { ...r, id: targetId })
-              : r
-          )
-        )
-        if (createdId) {
-          setSelectedId(createdId)
-        }
-        setShowEditConfirmPopup(false)
-        setEditing(false)
-        setIsCreatingNew(false)
-        setInitialSnapshot(null)
-        setForceTouchedDateErrors(false)
-        setFieldErrors({})
-        setShowEditSuccessPopup(true)
-      } else {
-        if (errorField && errorMsg) {
-          setFieldErrors((prev) => ({ ...prev, [errorField]: errorMsg }))
-          setFieldErrorPopup({
-            title: 'No se pueden guardar los cambios',
-            message: 'Revisá los campos marcados en rojo antes de volver a guardar.',
-            items: [{ label: FIELD_LABELS[errorField] ?? errorField, error: errorMsg }],
-          })
-        } else {
-          setGlobalError(errorMsg ?? 'Error al guardar los cambios.')
-        }
-        setShowEditConfirmPopup(false)
-      }
-    } catch (err) {
-      setGlobalError('Error inesperado al guardar. Intente nuevamente.')
-      setShowEditConfirmPopup(false)
-    } finally {
-      setSavingRecord(false)
-    }
-  }
-
-  const isCreatingAgente = isCreatingNew && editing
-  const isEditingJubila = !isCreatingNew && editing
-  const roAgente = !isCreatingAgente
-  const roJubila = !isEditingJubila
-  const ro = !editing
-
-  // ── Derived per selected record ──────────────────────────────────────────────
-  // Estado activo: viene directamente del campo ESTADO_ACTIVO de la tabla DATOS_PERSONALES_AGENTE_JUBILA
-  const isActivo = selected ? selected.estadoActivo : false
-  // Otorgamiento y Renovaciones siempre visible cuando hay registro seleccionado
-  const showRenovaciones = true
-  const extraBtns: BtnExtra[] = selected ? (BOTONES_POR_CAUSA_BAJA[selected.causaBaja] ?? []) : []
-
-  // ── Generación de PDFs PAV ───────────────────────────────────────────────
-  const [loadingPAV, setLoadingPAV] = useState<string | null>(null)
-
-  const handlePAVGenerate = async (action: string) => {
+  const handleSave = async () => {
     if (!selected) return
 
-    // Validar datos requeridos según el formulario
-    const missing: string[] = []
-
-    // Última fila de renovaciones con datos (para Pase Interno / Invalidez Provisoria)
-    const ultimaRenovacion = [...selected.renovaciones]
-      .reverse()
-      .find((rv) => rv.fechaDesdeExp?.trim() || rv.fechaHastaExp?.trim() || rv.nroResRenov?.trim() || rv.nroExpMun?.trim() || rv.nroDcto?.trim())
-
-    if (action === 'pase-reparticion') {
-      // Pase Repartición (formulario nuevo): datos personales + información laboral
-      if (!selected.apellidoNombres?.trim()) missing.push('• Nombre y Apellido')
-      if (!selected.cuil?.trim()) missing.push('• CUIL')
-      if (!selected.cargo?.trim()) missing.push('• Cargo')
-      if (!selected.programa?.trim()) missing.push('• Programa')
-      if (!selected.nroExpMunRenuncia?.trim()) missing.push('• Nº Exp. Mun. Renuncia (Información Laboral)')
-      if (!selected.fBaja?.trim()) missing.push('• Fecha Baja (Información Laboral)')
-      if (!selected.nroResRenCaja?.trim()) missing.push('• Nº Res. Caja (Información Laboral)')
-      if (!selected.jNroExpCaja?.trim()) missing.push('• J. Nº Exp. Caja (Información Laboral)')
-    } else if (action === 'pase-reparticion-rrp') {
-      // Pase Repartición RRP (Renuncia por Razones Particulares): datos personales + información laboral
-      if (!selected.apellidoNombres?.trim()) missing.push('• Nombre y Apellido')
-      if (!selected.cuil?.trim()) missing.push('• CUIL')
-      if (!selected.cargo?.trim()) missing.push('• Cargo')
-if (!selected.programa?.trim()) missing.push('• Programa')
-      if (!selected.nroExpMunRenuncia?.trim()) missing.push('• Nº Exp. Mun. Renuncia (Información Laboral)')
-      if (!selected.fBaja?.trim()) missing.push('• Fecha Baja (Información Laboral)')
-    } else if (action === 'renuncia') {
-      // Formulario Renuncia: datos personales + información laboral
-      if (!selected.apellidoNombres?.trim()) missing.push('• Nombre y Apellido')
-      if (!selected.dni?.trim()) missing.push('• DNI')
-      if (!selected.cargo?.trim()) missing.push('• Cargo')
-      if (!selected.programa?.trim()) missing.push('• Programa')
-      if (!selected.fBaja?.trim()) missing.push('• Fecha Baja (Información Laboral)')
-    } else if (action === 'renuncia-provisoria') {
-      // Renuncia Provisoria: usa el período de la última renovación cargada
-      if (!selected.apellidoNombres?.trim()) missing.push('• Nombre y Apellido')
-      if (!selected.dni?.trim()) missing.push('• DNI')
-      if (!selected.cargo?.trim()) missing.push('• Cargo')
-      if (!selected.programa?.trim()) missing.push('• Programa')
-      if (!ultimaRenovacion?.fechaDesdeExp?.trim()) missing.push('• Fecha Desde (última renovación provisoria)')
-      if (!ultimaRenovacion?.fechaHastaExp?.trim()) missing.push('• Fecha Hasta (última renovación provisoria)')
-    } else if (action === 'pase-interno') {
-      // Invalidez Provisoria: datos personales + información laboral + renovaciones
-      if (!selected.apellidoNombres?.trim()) missing.push('• Nombre y Apellido')
-      if (!selected.cuil?.trim()) missing.push('• CUIL')
-      if (!selected.cargo?.trim()) missing.push('• Cargo')
-      if (!selected.programa?.trim()) missing.push('• Programa')
-      if (!selected.nroExpMunRenuncia?.trim()) missing.push('• Nº Exp. Mun. Renuncia (Información Laboral)')
-      if (!selected.nroResRenCaja?.trim()) missing.push('• Nº Res. Caja (Información Laboral)')
-      if (!selected.jNroExpCaja?.trim()) missing.push('• J. Nº Exp. Caja (Información Laboral)')
-      if (!ultimaRenovacion?.fechaDesdeExp?.trim()) missing.push('• Fecha Desde (última renovación provisoria)')
-      if (!ultimaRenovacion?.fechaHastaExp?.trim()) missing.push('• Fecha Hasta (última renovación provisoria)')
-    } else {
-      // Formularios PAV: datos personales + expediente pasividad + fecha solicitud
-      if (!selected.apellidoNombres?.trim()) missing.push('• Nombre y Apellido')
-      if (!selected.dni?.trim()) missing.push('• DNI')
-      if (!selected.nroExpPasividad?.trim()) missing.push('• Número Expediente Pasividad')
-      if (!selected.fSolicitud?.trim()) missing.push('• Fecha Solicitud de Pasividad')
-
-      if (action === 'pav-aceptacion') {
-        if (!selected.cargo?.trim()) missing.push('• Cargo')
-        if (!selected.programa?.trim()) missing.push('• Repartición / Programa')
-      } else if (action === 'pav-pase') {
-        if (!selected.secretaria?.trim()) missing.push('• Secretaría')
-        if (!selected.cargo?.trim()) missing.push('• Cargo')
-      }
-
-      // Validar si la fecha de solicitud tiene un formato inválido
-      if (selected.fSolicitud?.trim()) {
-        const dateErr = getDateValidationError(selected.fSolicitud, true)
-        if (dateErr) {
-          missing.push(`• Fecha Solicitud de Pasividad (${dateErr})`)
-        }
-      }
-    }
-
-    if (missing.length > 0) {
-      alert(`Faltan datos requeridos para generar este formulario:\n\n${missing.join('\n')}\n\nPor favor complete los campos antes de generar el PDF.`)
+    const dateError = getDateValidationError(selected.fechaNacimiento, true)
+    if (dateError) {
+      setGlobalError(dateError)
       return
     }
 
-    setLoadingPAV(action)
+    setSaving(true)
+    setGlobalError(null)
     try {
-      const { pdf } = await import('@react-pdf/renderer')
-      const pavData = {
-        nombreCompleto: selected.apellidoNombres,
-        dni: selected.dni,
-        cuil: selected.cuil,
-        cargo: selected.cargo,
-        programa: selected.programa,
-        secretaria: selected.secretaria,
-        nroExpPasividad: selected.nroExpPasividad,
-        fSolicitud: selected.fSolicitud,
-        nroExpMunRenuncia: selected.nroExpMunRenuncia,
-        fBaja: selected.fBaja,
-        nroResRenCaja: selected.nroResRenCaja,
-        jNroExpCaja: selected.jNroExpCaja,
-        fechaDesdeProv: ultimaRenovacion?.fechaDesdeExp ?? '',
-        fechaHastaProv: ultimaRenovacion?.fechaHastaExp ?? '',
-        causaBaja: CAUSA_BAJA_OPTIONS.find((cb) => cb.value === selected.causaBaja)?.label ?? '',
+      const result = await actualizarEmpleado(selected.id, {
+        apellido: selected.apellido,
+        segundoApellido: selected.segundoApellido,
+        nombre: selected.nombre,
+        segundoNombre: selected.segundoNombre,
+        telefono: selected.telefono,
+        correo: selected.correo,
+        fechaNacimiento: selected.fechaNacimiento,
+      })
+
+      if (!result.ok || !result.empleado) {
+        setGlobalError(result.error ?? 'No se pudieron guardar los cambios.')
+        return
       }
-      let doc: React.ReactElement
-      let filename = ''
-      if (action === 'pav-solicitud') {
-        doc = <PavSolicitud data={pavData} />
-        filename = `PAV_Solicitud_${selected.dni}.pdf`
-      } else if (action === 'pav-aceptacion') {
-        doc = <PavAceptacionRechazo data={pavData} />
-        filename = `PAV_Aceptacion_${selected.dni}.pdf`
-      } else if (action === 'pav-pase-archivo') {
-        doc = <PavPaseArchivo data={pavData} />
-        filename = `PAV_PaseAlArchivo_${selected.dni}.pdf`
-      } else if (action === 'pav-desistido') {
-        doc = <PavDesistido data={pavData} />
-        filename = `PAV_Desistido_${selected.dni}.pdf`
-      } else if (action === 'pase-reparticion') {
-        doc = <PaseReparticion data={pavData} />
-        filename = `PaseReparticion_${selected.dni}.pdf`
-      } else if (action === 'pase-reparticion-rrp') {
-        doc = <RenunciaRazonesParticulares data={pavData} />
-        filename = `PaseReparticionRRP_${selected.dni}.pdf`
-      } else if (action === 'renuncia') {
-        doc = <RenunciaForm data={pavData} />
-        filename = `Renuncia_${selected.dni}.pdf`
-      } else if (action === 'renuncia-provisoria') {
-        doc = <RenunciaProvisoriaForm data={pavData} />
-        filename = `RenunciaProvisoria_${selected.dni}.pdf`
-      } else if (action === 'pase-interno') {
-        doc = <InvalidesProvisoria data={pavData} />
-        filename = `PaseInterno_${selected.dni}.pdf`
-      } else {
-        doc = <PavPaseSecretaria data={pavData} />
-        filename = `PAV_PaseSecretaria_${selected.dni}.pdf`
-      }
-      const blob = await pdf(doc as any).toBlob()
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = filename
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-      alert('¡Formulario generado y descargado con éxito en formato PDF!')
-    } catch (err) {
-      console.error('Error generating PDF:', err)
-      alert('Hubo un error al generar el PDF. Por favor intente nuevamente.')
+
+      setSelected(result.empleado)
+      setSnapshot(result.empleado)
+      setEditing(false)
+      setShowSuccessPopup(true)
+    } catch {
+      setGlobalError('Error al guardar en la base de datos. Verifique la conexión.')
     } finally {
-      setLoadingPAV(null)
+      setSaving(false)
     }
   }
+
+  const handleToggleEdit = () => {
+    if (!editing) {
+      startEdit()
+      return
+    }
+
+    const dateError = getDateValidationError(selected?.fechaNacimiento ?? '', true)
+    if (dateError) {
+      setGlobalError(dateError)
+      return
+    }
+
+    setShowEditConfirmPopup(true)
+  }
+
+  const handleConfirmEdit = async () => {
+    setShowEditConfirmPopup(false)
+    await handleSave()
+  }
+
+  const isActivo = selected ? selected.estadoActivo : false
 
   return (
     <div>
       <div>
-
-        {/* ── Sticky status bar ─────────────────────────────────────────────── */}
+        {/* ── Sticky status bar ───────────────────────────────────────────── */}
         {selected && (
           <div
             className={`sticky top-0 z-20 border-b shadow-sm px-6 py-2.5 flex items-center gap-3 ${
-              isActivo
-                ? 'bg-emerald-600 border-emerald-700'
-                : 'bg-red-600 border-red-700'
+              isActivo ? 'bg-emerald-600 border-emerald-700' : 'bg-red-600 border-red-700'
             }`}
           >
             <UserCircle className="w-4 h-4 text-white flex-shrink-0" />
             <span className="text-sm font-bold text-white truncate">
-              {selected.apellidoNombres || 'Nuevo Registro'}
+              {selected.nombreCompleto || 'Nuevo Registro'}
             </span>
             <span className="text-xs font-mono text-white/80 flex-shrink-0">
               DNI: {selected.dni || '—'}
@@ -843,175 +216,10 @@ if (!selected.programa?.trim()) missing.push('• Programa')
             >
               {isActivo ? 'ACTIVO' : 'INACTIVO'}
             </span>
-            <span className="ml-auto text-xs text-white/80 flex-shrink-0 truncate max-w-xs">
-              {CAUSA_BAJA_OPTIONS.find((b) => b.value === selected.causaBaja)?.label ?? '—'}
-            </span>
           </div>
         )}
 
-        {/* ── Trazabilidad modal ────────────────────────────────────────────── */}
-        {showTrazabilidad && selected && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4 flex flex-col max-h-[80vh]">
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 bg-[#1e3a8a] rounded-t-xl">
-                <div className="flex items-center gap-2">
-                  <GitBranch className="w-4 h-4 text-white" />
-                  <h3 className="text-sm font-bold text-white">Trazabilidad de Causas de Baja</h3>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-blue-200 font-mono">{selected.apellidoNombres} — DNI {selected.dni}</span>
-                  <button
-                    onClick={() => setShowTrazabilidad(false)}
-                    className="text-white/70 hover:text-white transition"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-              {/* Timeline */}
-              <div className="overflow-y-auto p-5 flex flex-col gap-0">
-                {selected.trazabilidad.length === 0 ? (
-                  <p className="text-sm text-slate-400 text-center py-8">Sin historial de trazabilidad.</p>
-                ) : (
-                  selected.trazabilidad.map((entry: TrazabilidadEntry, idx: number) => (
-                    <div key={idx} className="flex gap-4">
-                      {/* Timeline line */}
-                      <div className="flex flex-col items-center">
-                        <div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 mt-1 ${
-                          idx === selected.trazabilidad.length - 1
-                            ? 'bg-[#1e3a8a] border-[#1e3a8a]'
-                            : 'bg-white border-slate-300'
-                        }`} />
-                        {idx < selected.trazabilidad.length - 1 && (
-                          <div className="w-px flex-1 bg-slate-200 my-1" />
-                        )}
-                      </div>
-                      {/* Content */}
-                      <div className={`pb-5 flex-1 ${idx === selected.trazabilidad.length - 1 ? '' : ''}`}>
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-xs font-mono text-slate-400">{entry.fecha}</span>
-                        </div>
-                        <p className="text-sm font-semibold text-[#1e3a8a]">{entry.causaBaja}</p>
-                        <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{entry.observacion}</p>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-              {/* Footer */}
-              <div className="px-5 py-3 border-t border-slate-100 flex justify-end">
-                <button
-                  onClick={() => setShowTrazabilidad(false)}
-                  className="px-4 py-2 rounded-lg bg-[#1e3a8a] hover:bg-[#172554] text-white text-sm font-semibold transition"
-                >
-                  Cerrar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Modal Gestionar Archivos ───────────────────────────────────────── */}
-        {showArchivos && selected && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-3xl flex flex-col max-h-[85vh] overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 bg-[#1e3a8a] rounded-t-xl">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-white" />
-                  <h3 className="text-sm font-bold text-white">
-                    Cargar/Ver PDF/Imagen
-                  </h3>
-                  <span className="text-xs text-blue-200 font-mono ml-2">
-                    {selected.apellidoNombres} &mdash; DNI {selected.dni}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setShowArchivos(false)}
-                  className="text-white/70 hover:text-white transition p-1 rounded hover:bg-white/10"
-                  aria-label="Cerrar"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Body */}
-              <div className="overflow-y-auto p-5 flex-1">
-                <GestorArchivos
-                  jubilaId={
-                    // Solo pasar ID numerico real cuando el registro es un JUBILA (no agente sin jubila)
-                    !selected.id.startsWith('agente-') && !selected.id.startsWith('nuevo-')
-                      ? Number(selected.id)
-                      : null
-                  }
-                  disabled={selected.id.startsWith('agente-') || selected.id.startsWith('nuevo-')}
-                />
-              </div>
-
-              {/* Footer */}
-              <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex justify-end">
-                <button
-                  onClick={() => setShowArchivos(false)}
-                  className="px-4 py-2 rounded-lg bg-[#1e3a8a] hover:bg-[#172554] text-white text-xs font-semibold transition"
-                >
-                  Cerrar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Popup de errores de campos ────────────────────────────────────── */}
-        {fieldErrorPopup && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-            onClick={() => setFieldErrorPopup(null)}
-          >
-            <div
-              className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md flex flex-col max-h-[85vh] overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center gap-3 px-5 py-3.5 bg-rose-600 text-white">
-                <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <h3 className="text-sm font-bold">{fieldErrorPopup.title}</h3>
-                <button
-                  onClick={() => setFieldErrorPopup(null)}
-                  className="ml-auto text-white/80 hover:text-white transition"
-                  title="Cerrar"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="p-5 overflow-y-auto">
-                <p className="text-sm text-slate-600 mb-3">{fieldErrorPopup.message}</p>
-                <ul className="flex flex-col gap-2">
-                  {fieldErrorPopup.items.map((item, i) => (
-                    <li
-                      key={`${item.label}-${i}`}
-                      className="rounded-lg border border-rose-200 bg-rose-50/70 px-3 py-2"
-                    >
-                      <p className="text-[10px] font-bold text-rose-800 uppercase tracking-wide">
-                        {item.label}
-                      </p>
-                      <p className="text-sm text-rose-700 mt-0.5">{item.error}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex justify-end">
-                <button
-                  onClick={() => setFieldErrorPopup(null)}
-                  className="px-4 py-2 rounded-lg bg-[#1e3a8a] hover:bg-[#172554] text-white text-xs font-semibold transition"
-                >
-                  Entendido
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Not-found popup ───────────────────────────────────────────────── */}
+        {/* ── Not-found popup ─────────────────────────────────────────────── */}
         {notFoundPopup && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="bg-white rounded-xl shadow-2xl border border-slate-200 p-7 max-w-sm w-full mx-4 flex flex-col items-center gap-4">
@@ -1034,102 +242,17 @@ if (!selected.programa?.trim()) missing.push('• Programa')
           </div>
         )}
 
-        {/* ── Confirmation Popup (Creación de Nuevo Agente) ────────────────── */}
-        {showConfirmPopup && selected && (
+        {/* ── Edit confirmation popup ─────────────────────────────────────── */}
+        {showEditConfirmPopup && selected && snapshot && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-2xl flex flex-col max-h-[85vh] overflow-hidden">
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 bg-[#1e3a8a] text-white">
                 <div>
-                  <h3 className="text-base font-bold">Confirmación de Registro de Nuevo Agente</h3>
+                  <h3 className="text-base font-bold">Confirmación de Edición del Empleado</h3>
                   <p className="text-xs text-blue-200 mt-0.5">
-                    Se está por dar de alta un nuevo agente con los siguientes datos personales:
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowConfirmPopup(false)}
-                  className="text-white/70 hover:text-white transition p-1 rounded-lg hover:bg-white/10"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Content Body: Solo Datos Personales */}
-              <div className="overflow-y-auto p-6 space-y-4 text-xs">
-                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                  <h4 className="font-bold text-[#1e3a8a] text-xs uppercase tracking-wider mb-2.5 border-b border-slate-200 pb-1 flex items-center gap-1.5">
-                    <UserCircle className="w-4 h-4" /> DATOS PERSONALES DEL AGENTE
-                  </h4>
-                  <ul className="pl-4 space-y-1.5 text-slate-700 font-mono">
-                    <li><span className="font-semibold text-slate-900">Estado:</span> <span className="text-emerald-700 font-bold">ACTIVO (Predeterminado)</span></li>
-                    <li><span className="font-semibold text-slate-900">CUIL:</span> {selected.cuil || '—'}</li>
-                    <li><span className="font-semibold text-slate-900">DNI (automático):</span> {selected.dni || '—'}</li>
-                    <li><span className="font-semibold text-slate-900">Apellido:</span> {selected.apellido || '—'}</li>
-                    <li><span className="font-semibold text-slate-900">2º Apellido:</span> {selected.segundoApellido || '—'}</li>
-                    <li><span className="font-semibold text-slate-900">Nombre:</span> {selected.nombre || '—'}</li>
-                    <li><span className="font-semibold text-slate-900">2º Nombre:</span> {selected.segundoNombre || '—'}</li>
-                    <li><span className="font-semibold text-slate-900">Nombre completo:</span> {selected.apellidoNombres || '—'}</li>
-                    <li><span className="font-semibold text-slate-900">Teléfono:</span> {selected.telefono || '—'}</li>
-                    <li><span className="font-semibold text-slate-900">Correo Electrónico:</span> {selected.correo || '—'}</li>
-                    <li><span className="font-semibold text-slate-900">Fecha de Nacimiento:</span> {selected.fechaNacimiento || '—'}</li>
-                    <li><span className="font-semibold text-slate-900">Edad Actual:</span> {selected.edadActual || '—'}</li>
-                  </ul>
-                </div>
-              </div>
-
-              {/* Footer Buttons */}
-              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
-                <button
-                  onClick={() => setShowConfirmPopup(false)}
-                  className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 text-sm font-semibold transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleConfirmRegistration}
-                  className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition flex items-center gap-2 shadow-sm"
-                >
-                  <Save className="w-4 h-4" />
-                  Aceptar y Guardar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Registration Success Popup (Nuevo Agente) ────────────────────── */}
-        {showSuccessPopup && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in duration-200">
-            <div className="bg-white rounded-xl shadow-2xl border border-slate-200 p-7 max-w-sm w-full mx-4 flex flex-col items-center gap-4 text-center">
-              <div className="flex items-center justify-center w-14 h-14 rounded-full bg-emerald-100 border border-emerald-200">
-                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-800 mb-1">¡Agente Registrado con Éxito!</h3>
-                <p className="text-sm text-slate-600">
-                  Se registró correctamente el nuevo agente en la base de datos con estado Activo.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowSuccessPopup(false)}
-                className="w-full px-5 py-2.5 rounded-lg bg-[#1e3a8a] hover:bg-[#172554] text-white text-sm font-semibold transition shadow"
-              >
-                Aceptar
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── Edit Confirmation Popup ───────────────────────────────────────── */}
-        {showEditConfirmPopup && selected && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-2xl flex flex-col max-h-[85vh] overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 bg-[#1e3a8a] text-white">
-                <div>
-                  <h3 className="text-base font-bold">Confirmación de Edición de Jubilación</h3>
-                  <p className="text-xs text-blue-200 mt-0.5">
-                    Se están por guardar las siguientes modificaciones en la jubilación de <span className="font-semibold">{selected.apellidoNombres}</span>:
+                    Se están por guardar las siguientes modificaciones en los datos de{' '}
+                    <span className="font-semibold">{selected.nombreCompleto}</span>:
                   </p>
                 </div>
                 <button
@@ -1142,34 +265,32 @@ if (!selected.programa?.trim()) missing.push('• Programa')
 
               {/* Body: Diff List */}
               {(() => {
-                const editDiffs = getRecordDiffs(initialSnapshot, selected)
+                const editDiffs = getDiffs(snapshot, selected)
                 return (
                   <div className="overflow-y-auto p-6 space-y-4 text-xs">
                     {editDiffs.length === 0 ? (
                       <div className="p-4 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-xs leading-relaxed">
-                        No se detectaron modificaciones en los campos de la jubilación.
+                        No se detectaron modificaciones en los datos del empleado.
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {Array.from(new Set(editDiffs.map((d) => d.section))).map((section) => (
-                          <div key={section} className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                            <h4 className="font-bold text-[#1e3a8a] text-xs uppercase tracking-wider mb-2.5 border-b border-slate-200 pb-1">
-                              {section}
-                            </h4>
-                            <ul className="pl-2 space-y-2 text-slate-700 font-mono">
-                              {editDiffs.filter((d) => d.section === section).map((diff, idx) => (
-                                <li key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1 text-xs">
-                                  <span className="font-semibold text-slate-900 min-w-[150px]">• {diff.label}:</span>
-                                  <div className="flex items-center gap-2 bg-white px-2.5 py-1 rounded border border-slate-200">
-                                    <span className="line-through text-rose-500 font-medium">{diff.oldVal}</span>
-                                    <span className="text-slate-400">→</span>
-                                    <span className="text-emerald-700 font-bold">{diff.newVal}</span>
-                                  </div>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ))}
+                        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                          <h4 className="font-bold text-[#1e3a8a] text-xs uppercase tracking-wider mb-2.5 border-b border-slate-200 pb-1">
+                            DATOS PERSONALES
+                          </h4>
+                          <ul className="pl-2 space-y-2 text-slate-700 font-mono">
+                            {editDiffs.map((diff, idx) => (
+                              <li key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1 text-xs">
+                                <span className="font-semibold text-slate-900 min-w-[150px]">• {diff.label}:</span>
+                                <div className="flex items-center gap-2 bg-white px-2.5 py-1 rounded border border-slate-200">
+                                  <span className="line-through text-rose-500 font-medium">{diff.oldVal}</span>
+                                  <span className="text-slate-400">→</span>
+                                  <span className="text-emerald-700 font-bold">{diff.newVal}</span>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1185,7 +306,7 @@ if (!selected.programa?.trim()) missing.push('• Programa')
                   Rechazar / Cancelar
                 </button>
                 <button
-                  onClick={handleConfirmEdit}
+                  onClick={() => void handleConfirmEdit()}
                   className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition flex items-center gap-2 shadow-sm"
                 >
                   <Save className="w-4 h-4" />
@@ -1196,8 +317,8 @@ if (!selected.programa?.trim()) missing.push('• Programa')
           </div>
         )}
 
-        {/* ── Edit Success Popup ────────────────────────────────────────────── */}
-        {showEditSuccessPopup && (
+        {/* ── Edit success popup ──────────────────────────────────────────── */}
+        {showSuccessPopup && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl border border-slate-200 p-7 max-w-sm w-full mx-4 flex flex-col items-center gap-4 text-center">
               <div className="flex items-center justify-center w-14 h-14 rounded-full bg-emerald-100 border border-emerald-200">
@@ -1206,11 +327,11 @@ if (!selected.programa?.trim()) missing.push('• Programa')
               <div>
                 <h3 className="text-lg font-bold text-slate-800 mb-1">¡Edición Exitosa!</h3>
                 <p className="text-sm text-slate-600">
-                  Se editó con éxito la información de la jubilación.
+                  Se guardaron con éxito los datos del empleado.
                 </p>
               </div>
               <button
-                onClick={() => setShowEditSuccessPopup(false)}
+                onClick={() => setShowSuccessPopup(false)}
                 className="w-full px-5 py-2.5 rounded-lg bg-[#1e3a8a] hover:bg-[#172554] text-white text-sm font-semibold transition shadow"
               >
                 Aceptar
@@ -1222,7 +343,7 @@ if (!selected.programa?.trim()) missing.push('• Programa')
         <div className="p-6">
           <h1 className="text-xl font-bold text-[#1e3a8a] mb-5">Panel Principal</h1>
 
-          {/* ── Error banner ────────────────────────────────────────── */}
+          {/* ── Error banner ──────────────────────────────────────────────── */}
           {globalError && (
             <div className="flex items-center gap-3 mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -1237,7 +358,7 @@ if (!selected.programa?.trim()) missing.push('• Programa')
             </div>
           )}
 
-          {/* ── Loading overlay (carga de registro individual) ──────────── */}
+          {/* ── Loading overlay (carga de registro individual) ────────────── */}
           {loadingRecord && (
             <div className="flex items-center gap-2 mb-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
               <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
@@ -1245,15 +366,15 @@ if (!selected.programa?.trim()) missing.push('• Programa')
             </div>
           )}
 
-          {/* ── Saving overlay ────────────────────────────────────────── */}
-          {savingRecord && (
+          {/* ── Saving overlay ────────────────────────────────────────────── */}
+          {saving && (
             <div className="flex items-center gap-2 mb-4 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700">
               <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
               <span>Guardando en la base de datos...</span>
             </div>
           )}
 
-          {/* ── Search bar ─────────────────────────────────────────── */}
+          {/* ── Search bar ────────────────────────────────────────────────── */}
           <div className="flex items-center gap-2 mb-6">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -1263,13 +384,13 @@ if (!selected.programa?.trim()) missing.push('• Programa')
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSearchAndLoad()
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) void handleSearchAndLoad()
                 }}
                 className="pl-9 pr-4 py-2 w-full rounded-lg border border-slate-200 bg-white text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-[#1e3a8a] transition"
               />
             </div>
             <button
-              onClick={handleSearchAndLoad}
+              onClick={() => void handleSearchAndLoad()}
               disabled={loadingSearch}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e3a8a] hover:bg-[#172554] disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold transition"
             >
@@ -1278,13 +399,13 @@ if (!selected.programa?.trim()) missing.push('• Programa')
             </button>
           </div>
 
-          {/* ── Grilla de coincidencias ─────────────────────────────────────── */}
-          {showGrid && gridIds.length > 1 && (
+          {/* ── Grilla de coincidencias ───────────────────────────────────── */}
+          {showGrid && results.length > 1 && (
             <div className="mb-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
                 <Users className="w-3.5 h-3.5 text-slate-400" />
                 <span className="text-xs font-bold text-[#1e3a8a] uppercase tracking-widest">
-                  {gridIds.length} coincidencia{gridIds.length !== 1 ? 's' : ''}
+                  {results.length} coincidencia{results.length !== 1 ? 's' : ''}
                 </span>
                 <span className="ml-auto">
                   <button
@@ -1307,21 +428,19 @@ if (!selected.programa?.trim()) missing.push('• Programa')
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {gridIds.map((id) => {
-                      const r = records.find((rec) => rec.id === id)
-                      if (!r) return null
-                      const isSelected = selectedId === id
+                    {results.map((empleado) => {
+                      const isSelected = selected?.id === empleado.id
                       return (
                         <tr
-                          key={id}
-                          onClick={() => handleSelectId(id)}
+                          key={empleado.id}
+                          onClick={() => handleSelect(empleado)}
                           className={`cursor-pointer transition ${
                             isSelected ? 'bg-blue-50 border-l-2 border-l-[#1e3a8a]' : 'hover:bg-slate-50'
                           }`}
                         >
-                          <td className="px-3 py-2.5 font-mono text-slate-600">{r.dni || '—'}</td>
-                          <td className="px-3 py-2.5 font-semibold text-slate-800">{r.apellidoNombres || '—'}</td>
-                          <td className="px-3 py-2.5 text-slate-500 truncate max-w-[240px]">{r.programa || '—'}</td>
+                          <td className="px-3 py-2.5 font-mono text-slate-600">{empleado.dni || '—'}</td>
+                          <td className="px-3 py-2.5 font-semibold text-slate-800">{empleado.nombreCompleto || '—'}</td>
+                          <td className="px-3 py-2.5 text-slate-500 truncate max-w-[240px]">{empleado.programa || '—'}</td>
                         </tr>
                       )
                     })}
@@ -1331,10 +450,9 @@ if (!selected.programa?.trim()) missing.push('• Programa')
             </div>
           )}
 
-          {/* ── Selected record detail ───────────────────────────────────────── */}
+          {/* ── Selected record detail ────────────────────────────────────── */}
           {selected && (
             <div ref={detailRef} className="flex flex-col gap-4">
-
               {/* Edit/Save header */}
               <div className="flex items-center justify-between gap-3 px-1">
                 <div className="flex items-center gap-3">
@@ -1342,20 +460,11 @@ if (!selected.programa?.trim()) missing.push('• Programa')
                   <h2 className="text-base font-bold text-slate-800">
                     EMPLEADO:{' '}
                     <span className="text-[#1e3a8a]">
-                      {selected.apellidoNombres || (isCreatingNew ? 'Nuevo Agente' : 'Nuevo Registro')} &nbsp; {selected.dni}
+                      {selected.nombreCompleto || 'Nuevo Registro'} &nbsp; {selected.dni}
                     </span>
                   </h2>
                 </div>
                 <div className="flex items-center gap-2">
-                  {!isCreatingNew && (
-                    <button
-                      onClick={() => setShowTrazabilidad(true)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition"
-                    >
-                      <GitBranch className="w-4 h-4" />
-                      <span>Trazabilidad</span>
-                    </button>
-                  )}
                   {editing && (
                     <button
                       onClick={handleCancelEdit}
@@ -1374,7 +483,7 @@ if (!selected.programa?.trim()) missing.push('• Programa')
                     }`}
                   >
                     {editing ? (
-                      <><Save className="w-4 h-4" /><span>{isCreatingNew ? 'Guardar Agente' : 'Guardar Registro'}</span></>
+                      <><Save className="w-4 h-4" /><span>Guardar Registro</span></>
                     ) : (
                       <><Pencil className="w-4 h-4" /><span>Editar</span></>
                     )}
@@ -1382,97 +491,36 @@ if (!selected.programa?.trim()) missing.push('• Programa')
                 </div>
               </div>
 
-              {/* ── Card 1: Datos Personales (Con fondo verde o rojo clarito según estado) ── */}
+              {/* ── Card 1: Datos Personales ──────────────────────────────── */}
               <SectionCard
                 title="Datos Personales"
                 className={isActivo ? 'bg-emerald-50/70 border-emerald-200' : 'bg-red-50/70 border-red-200'}
                 headerClassName={isActivo ? 'bg-emerald-100/90 border-emerald-200' : 'bg-red-100/90 border-red-200'}
               >
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {/* 1. CUIL (Primero de todo) */}
+                  {/* 1. CUIL */}
                   <FormField
                     label="CUIL"
                     value={selected.cuil}
-                    onChange={updateCuil}
                     placeholder="20-00000000-0"
-                    mask="cuil"
-                    readOnly={roAgente}
+                    readOnly={true}
                   />
-                  {/* 2. DNI (Auto-rellenado según CUIL) */}
+                  {/* 2. DNI */}
                   <FormField
                     label="DNI"
                     value={selected.dni}
                     placeholder="Número de DNI"
                     readOnly={true}
-                    error={fieldErrors.dni}
                   />
-                  {/* 3. Nombre: 4 campos separados solo al agregar un agente nuevo;
-                      en registros existentes se muestra el nombre completo */}
-                  {isCreatingNew ? (
-                    <>
-                      <FormField
-                        label="Apellido"
-                        value={selected.apellido}
-                        onChange={(v) => updateNombre('apellido', v)}
-                        placeholder="Apellido"
-                        mask="letters"
-                        error={fieldErrors.apellido}
-                      />
-                      <FormField
-                        label="2º Apellido"
-                        value={selected.segundoApellido}
-                        onChange={(v) => updateNombre('segundoApellido', v)}
-                        placeholder="Opcional"
-                        mask="letters"
-                        error={fieldErrors.segundoApellido}
-                      />
-                      <FormField
-                        label="Nombre"
-                        value={selected.nombre}
-                        onChange={(v) => updateNombre('nombre', v)}
-                        placeholder="Nombre"
-                        mask="letters"
-                        error={fieldErrors.nombre}
-                      />
-                      <FormField
-                        label="2º Nombre"
-                        value={selected.segundoNombre}
-                        onChange={(v) => updateNombre('segundoNombre', v)}
-                        placeholder="Opcional"
-                        mask="letters"
-                        error={fieldErrors.segundoNombre}
-                      />
-                    </>
-                  ) : (
-                    <FormField
-                      label="Apellido y Nombres"
-                      value={selected.apellidoNombres}
-                      onChange={(v) => {
-                        // Al reescribir el nombre completo se reparten sus partes
-                        // y se limpian los segundos nombres/apellidos.
-                        const partes = splitNombreCompleto(v)
-                        setRecords((prev) =>
-                          prev.map((r) => r.id === selectedId
-                            ? {
-                                ...r,
-                                apellido: partes.apellido,
-                                segundoApellido: '',
-                                nombre: partes.nombre || partes.apellido,
-                                segundoNombre: '',
-                                apellidoNombres: v.trim(),
-                              }
-                            : r)
-                        )
-                        clearFieldError('apellidoNombres')
-                      }}
-                      placeholder="Apellido y Nombres"
-                      className="col-span-2"
-                      mask="letters"
-                      readOnly={roAgente}
-                      error={fieldErrors.apellidoNombres}
-                    />
-                  )}
-                  {/* 4. Teléfono (Solo números) + Botón WhatsApp */}
+                  {/* 3. Apellido y Nombres */}
+                  <FormField
+                    label="Apellido y Nombres"
+                    value={selected.nombreCompleto}
+                    placeholder="Apellido y Nombres"
+                    className="col-span-2"
+                    readOnly={true}
+                  />
+                  {/* 4. Teléfono + Botón WhatsApp */}
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider truncate">
                       Teléfono
@@ -1485,11 +533,11 @@ if (!selected.programa?.trim()) missing.push('• Programa')
                           const raw = e.target.value.replace(/\D/g, '')
                           update('telefono', raw)
                         }}
-                        readOnly={ro}
+                        readOnly={!editing}
                         placeholder="Número de teléfono"
                         autoComplete="off"
                         className={`flex-1 min-w-0 rounded-md border border-slate-200 px-2.5 py-1.5 text-sm placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-[#1e3a8a] transition ${
-                          ro ? 'bg-slate-50 text-slate-500 cursor-default' : 'bg-white text-slate-800'
+                          !editing ? 'bg-slate-50 text-slate-500 cursor-default' : 'bg-white text-slate-800'
                         }`}
                       />
                       {selected.telefono && (
@@ -1509,16 +557,14 @@ if (!selected.programa?.trim()) missing.push('• Programa')
                   <FormField
                     label="Correo Electrónico"
                     value={selected.correo}
-                    onChange={(v) => update('correo', v)}
                     placeholder="correo@ejemplo.com"
                     className="col-span-2"
-                    readOnly={roAgente}
+                    readOnly={true}
                   />
                   {/* 6. Programa */}
                   <FormField
                     label="Programa"
                     value={selected.programa}
-                    onChange={(v) => update('programa', v)}
                     placeholder="Programa"
                     readOnly={true}
                   />
@@ -1526,15 +572,13 @@ if (!selected.programa?.trim()) missing.push('• Programa')
                   <FormField
                     label="Secretaría"
                     value={selected.secretaria}
-                    onChange={(v) => update('secretaria', v)}
                     placeholder="Secretaría"
                     readOnly={true}
                   />
-                  {/* 8. Cargo (A continuación de Secretaría) */}
+                  {/* 8. Cargo */}
                   <FormField
                     label="Cargo"
                     value={selected.cargo}
-                    onChange={(v) => update('cargo', v)}
                     placeholder="Cargo desempeñado"
                     readOnly={true}
                   />
@@ -1542,7 +586,6 @@ if (!selected.programa?.trim()) missing.push('• Programa')
                   <FormField
                     label="Antigüedad Actual"
                     value={selected.antiguedadRecibo}
-                    onChange={(v) => update('antiguedadRecibo', v)}
                     placeholder="Ej: 25 años, 4 meses"
                     readOnly={true}
                   />
@@ -1550,7 +593,6 @@ if (!selected.programa?.trim()) missing.push('• Programa')
                   <FormField
                     label="Antigüedad al 31/12"
                     value={selected.antiguedadLicencias}
-                    onChange={(v) => update('antiguedadLicencias', v)}
                     placeholder="Ej: 1 año, 2 meses"
                     readOnly={true}
                   />
@@ -1558,312 +600,19 @@ if (!selected.programa?.trim()) missing.push('• Programa')
                   <FormField
                     label="Fecha de Nacimiento"
                     value={selected.fechaNacimiento}
-                    onChange={(v) => update('fechaNacimiento', v)}
                     placeholder="dd/mm/aaaa"
                     mask="date"
-                    readOnly={roAgente}
-                    forceTouched={forceTouchedDateErrors}
+                    readOnly={true}
                   />
                   {/* 12. Edad Actual */}
                   <FormField
                     label="Edad Actual"
                     value={selected.edadActual}
-                    onChange={(v) => update('edadActual', v)}
                     placeholder="Ej: 65"
                     readOnly={true}
                   />
-                  {/* 13. Fecha Estimada Jubilación */}
-                  <FormField
-                    label="Fecha Estimada Jubilación"
-                    value={selected.fechaEstimadaJubilacionOrdinaria}
-                    onChange={(v) => update('fechaEstimadaJubilacionOrdinaria', v)}
-                    placeholder="dd/mm/aaaa"
-                    className="col-span-2"
-                    readOnly={true}
-                  />
-                </div>
-                {selected.noCumpleAportesEdadAvanzada && (
-                  <div className="flex items-start gap-2 mt-4 px-4 py-3 rounded-lg border border-red-300 bg-red-50 text-red-800">
-                    <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-bold">No cumple los aportes mínimos para jubilarse por edad avanzada.</p>
-                      <p className="text-xs mt-0.5">Al llegar a los 70 años no supera los 10 años de servicio requeridos.</p>
-                    </div>
-                  </div>
-                )}
-              </SectionCard>
-
-              {/* ── Card 2: Información Laboral ──────────────────────────────── */}
-              <SectionCard title="Información Laboral">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                  {/* Causa de Baja + Nro Tramite en primera fila */}
-                  <SelectField
-                    label="Causa de Baja"
-                    value={selected.causaBaja}
-                    onChange={(v) => update('causaBaja', v)}
-                    options={CAUSA_BAJA_OPTIONS}
-                    disabled={roJubila}
-                    placeholder="Seleccione alguna causa de baja"
-                    className="col-span-2"
-                  />
-                  <FormField
-                    label="Número de Trámite"
-                    value={selected.nroTramite}
-                    onChange={(v) => update('nroTramite', v)}
-                    placeholder="000.000/00"
-                    readOnly={roJubila}
-                    error={fieldErrors.nroTramite}
-                  />
-                  <FormField
-                    label="Fecha Baja"
-                    value={selected.fBaja}
-                    onChange={(v) => update('fBaja', v)}
-                    placeholder="dd/mm/aaaa"
-                    readOnly={roJubila}
-                    forceTouched={forceTouchedDateErrors}
-                  />
-                  <FormField
-                    label="Nº Exp. Mun. Renuncia"
-                    value={selected.nroExpMunRenuncia}
-                    onChange={(v) => update('nroExpMunRenuncia', v)}
-                    placeholder="000.000/00"
-                    readOnly={roJubila}
-                  />
-                  <FormField
-                    label="J. Nº Exp. Caja"
-                    value={selected.jNroExpCaja}
-                    onChange={(v) => update('jNroExpCaja', v)}
-                    placeholder="000.000/00"
-                    readOnly={roJubila}
-                  />
-                  <FormField
-                    label="Nº Res. Caja"
-                    value={selected.nroResRenCaja}
-                    onChange={(v) => update('nroResRenCaja', v)}
-                    placeholder="000.000/00"
-                    readOnly={roJubila}
-                  />
-                  {/* Nº Exp. Caj. Deneg. al final */}
-                  <FormField
-                    label="Nº Exp. Caj. Deneg."
-                    value={selected.nroExpCajDeneg}
-                    onChange={(v) => update('nroExpCajDeneg', v)}
-                    placeholder="000.000/00"
-                    readOnly={roJubila}
-                  />
-                </div>
-
-                {/* Botones dinámicos según causa de baja */}
-                <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
-                  {/* Botón unificado Cargar/Ver PDF/Imagen */}
-                  <button
-                    type="button"
-                    onClick={() => setShowArchivos(true)}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    Cargar/Ver PDF/Imagen
-                  </button>
-                  {/* Variables según causa de baja */}
-                  {extraBtns.map((btn) => (
-                    <button
-                      key={btn.label}
-                      type="button"
-                      disabled={btn.action ? loadingPAV !== null : false}
-                      onClick={btn.action ? () => handlePAVGenerate(btn.action!) : undefined}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#1e3a8a] hover:bg-[#172554] text-white transition disabled:opacity-50"
-                    >
-                      {btn.action && loadingPAV === btn.action
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : <BtnIcon name={btn.icon} />}
-                      {btn.label}
-                    </button>
-                  ))}
-                </div>
-
-
-              </SectionCard>
-
-              {/* ── Card 3: Otorgamiento y Renovaciones (solo Invalidez Provisoria) */}
-              {showRenovaciones && (
-                <SectionCard title="OTORGAMIENTO Y RENOVACION PROVISORIAS">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-200 bg-slate-50">
-                          {['#', 'Número Resolución Caja', 'N.º Expte. Mun. Renuncia. Prov', 'Fecha Desde Provisoria', 'Fecha Hasta Provisoria', 'N.º de Decreto/Resolución Municipal'].map((h) => (
-                            <th
-                              key={h}
-                              className="text-left px-2 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap"
-                            >
-                              {h}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {selected.renovaciones.map((rv, i) => (
-                          <tr key={i} className="hover:bg-blue-50/30">
-                            <td className="px-2 py-1.5 text-slate-400 font-medium">{i + 1}</td>
-                            {(
-                              ['nroResRenov', 'nroExpMun', 'fechaDesdeExp', 'fechaHastaExp', 'nroDcto'] as const
-                            ).map((field) => {
-                              const isDate = field === 'fechaDesdeExp' || field === 'fechaHastaExp'
-                              const dateErr = isDate && rv[field] ? getDateValidationError(rv[field], forceTouchedDateErrors) : null
-                              const rangeErr =
-                                field === 'fechaHastaExp' &&
-                                rv.fechaDesdeExp?.trim() &&
-                                rv.fechaHastaExp?.trim() &&
-                                isDateRangeInvalid(rv.fechaDesdeExp, rv.fechaHastaExp)
-                              const cellErr = dateErr ?? (rangeErr ? 'Debe ser posterior a la fecha "desde"' : null)
-                              return (
-                                <td key={field} className="px-1 py-1 relative">
-                                  <input
-                                    type="text"
-                                    value={rv[field]}
-                                    onChange={(e) => {
-                                      let val = e.target.value
-                                      if (isDate) {
-                                        val = formatDate(val)
-                                      } else if (field === 'nroExpMun') {
-                                        val = formatExpediente(val)
-                                      }
-                                      updateRenovacion(i, field, val)
-                                    }}
-                                    readOnly={roJubila}
-                                    placeholder={
-                                      isDate
-                                        ? 'dd/mm/aaaa'
-                                        : field === 'nroExpMun'
-                                        ? '000.000/00'
-                                        : '—'
-                                    }
-                                    title={cellErr ?? undefined}
-                                    autoComplete="off"
-                                    className={`w-full rounded border px-2 py-1 text-xs transition min-w-[90px] ${
-                                      cellErr
-                                        ? 'border-rose-500 bg-rose-50/40 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-300 focus:border-rose-600'
-                                        : 'border-slate-200 bg-white text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-200 focus:border-[#1e3a8a]'
-                                    } ${
-                                      roJubila ? 'bg-slate-50 text-slate-500 cursor-default' : ''
-                                    }`}
-                                  />
-                                  {cellErr && (
-                                    <span className="block text-[9px] text-rose-600 font-bold truncate mt-0.5" title={cellErr}>
-                                      {cellErr}
-                                    </span>
-                                  )}
-                                </td>
-                              )
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </SectionCard>
-              )}
-
-              {/* ── Card 4: Pasividad ─────────────────────────────────────────── */}
-              <SectionCard title="Pasividad">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
-                  <FormField
-                    label="Fecha de Solicitud"
-                    value={selected.fSolicitud}
-                    onChange={(v) => update('fSolicitud', v)}
-                    placeholder="dd/mm/aaaa"
-                    readOnly={roJubila}
-                    forceTouched={forceTouchedDateErrors}
-                  />
-                  <FormField
-                    label="Fecha Estimada Jubilación Ordinaria"
-                    value={selected.fEstimadaJOrd}
-                    onChange={(v) => update('fEstimadaJOrd', v)}
-                    placeholder="dd/mm/aaaa"
-                    readOnly={roJubila}
-                    forceTouched={forceTouchedDateErrors}
-                  />
-                  <FormField
-                    label="Número Expediente Pasividad"
-                    value={selected.nroExpPasividad}
-                    onChange={(v) => update('nroExpPasividad', v)}
-                    placeholder="000.000/00"
-                    readOnly={roJubila}
-                  />
-                  <FormField
-                    label="Fecha Firma Convenio"
-                    value={selected.fFirmaConvenio}
-                    onChange={(v) => update('fFirmaConvenio', v)}
-                    placeholder="dd/mm/aaaa"
-                    readOnly={roJubila}
-                    forceTouched={forceTouchedDateErrors}
-                  />
-                  <FormField
-                    label="Fecha Inicio Pasividad"
-                    value={selected.fInicioPasividad}
-                    onChange={(v) => update('fInicioPasividad', v)}
-                    placeholder="dd/mm/aaaa"
-                    readOnly={roJubila}
-                    forceTouched={forceTouchedDateErrors}
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                    Observaciones
-                  </label>
-                  <textarea
-                    value={selected.observacionPasividad}
-                    onChange={(e) => update('observacionPasividad', e.target.value)}
-                    readOnly={roJubila}
-                    rows={3}
-                    placeholder="Observaciones de pasividad..."
-                    className={`rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-[#1e3a8a] transition resize-none leading-relaxed ${
-                      roJubila ? 'bg-slate-50 text-slate-500 cursor-default' : ''
-                    }`}
-                  />
                 </div>
               </SectionCard>
-
-              {/* ── Card 5: Notificaciones y Suspensiones ────────────────────── */}
-              <SectionCard title="Notificaciones y Suspensiones">
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField
-                    label="Notificación Artículo 43"
-                    value={selected.notificacionArt43}
-                    onChange={(v) => update('notificacionArt43', v)}
-                    placeholder="dd/mm/aaaa"
-                    readOnly={roJubila}
-                    forceTouched={forceTouchedDateErrors}
-                  />
-                  <FormField
-                    label="N. Exp. Art. 43 Susp. Pago"
-                    value={selected.nExpArt43SuspPago}
-                    onChange={(v) => update('nExpArt43SuspPago', v)}
-                    placeholder="000.000/00"
-                    readOnly={roJubila}
-                  />
-                </div>
-              </SectionCard>
-
-              {/* ── Card 6: Observaciones ────────────────────────────────────── */}
-              <SectionCard title="Observaciones">
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                    Observación
-                  </label>
-                  <textarea
-                    value={selected.observacion}
-                    onChange={(e) => update('observacion', e.target.value)}
-                    readOnly={roJubila}
-                    rows={5}
-                    placeholder="Ingrese observaciones del sistema..."
-                    className={`rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-[#1e3a8a] transition resize-none leading-relaxed font-mono ${
-                      roJubila ? 'bg-slate-50 text-slate-500 cursor-default' : ''
-                    }`}
-                  />
-                </div>
-              </SectionCard>
-
             </div>
           )}
         </div>

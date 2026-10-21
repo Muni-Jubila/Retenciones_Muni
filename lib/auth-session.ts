@@ -3,7 +3,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
 import { cookies } from 'next/headers'
 import { prisma } from '@/lib/prisma'
 
-const SESSION_COOKIE = 'jubila_session'
+const SESSION_COOKIE = 'retenciones_session'
 const SESSION_DURATION_SECONDS = 8 * 60 * 60
 const SESSION_IDLE_SECONDS = 6 * 60 * 60
 
@@ -71,6 +71,14 @@ export async function getAuthenticatedSession(): Promise<AuthenticatedSession | 
     include: { USUARIO: true },
   })
   if (!session || session.FECHA_HORA_FIN) return null
+
+  if (!session.USUARIO.ES_RETENCIONES) {
+    await prisma.sESION.update({
+      where: { ID_SESION: session.ID_SESION },
+      data: { FECHA_HORA_FIN: new Date() },
+    })
+    return null
+  }
 
   const expiresAt = session.FECHA_HORA_INICIO.getTime() + SESSION_DURATION_SECONDS * 1000
   if (idleExpired || Date.now() >= expiresAt) {
