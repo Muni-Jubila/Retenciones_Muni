@@ -88,3 +88,27 @@
     @apply bg-background text-foreground font-sans;
   }
 }
+
+/* Impresión de fichas de embargos: sólo el contenido principal. */
+@media print {
+  body {
+    background: #fff !important;
+  }
+  aside,
+  header {
+    display: none !important;
+  }
+  .h-screen {
+    height: auto !important;
+  }
+  .overflow-hidden,
+  .overflow-y-auto {
+    overflow: visible !important;
+  }
+  table {
+    page-break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid;
+  }
+}

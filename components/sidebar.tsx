@@ -1,9 +1,9 @@
 'use client'
 
-import { FileText, LayoutDashboard, Users } from 'lucide-react'
+import { FileText, LayoutDashboard, Scale, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type NavSection = 'inicio' | 'informes' | 'usuarios'
+export type NavSection = 'inicio' | 'embargos' | 'informes' | 'usuarios'
 
 interface SidebarProps {
   activeSection: NavSection
@@ -40,6 +40,20 @@ export default function Sidebar({ activeSection, onSectionChange, role }: Sideba
         >
           <LayoutDashboard className="w-4 h-4 flex-shrink-0" />
           <span>INICIO</span>
+        </button>
+
+        {/* EMBARGOS / RETENCIONES */}
+        <button
+          onClick={() => onSectionChange('embargos')}
+          className={cn(
+            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold tracking-wide transition-colors w-full text-left',
+            activeSection === 'embargos'
+              ? 'bg-[#1d4ed8] text-white'
+              : 'text-blue-200 hover:bg-[#1e3a8a] hover:text-white'
+          )}
+        >
+          <Scale className="w-4 h-4 flex-shrink-0" />
+          <span>EMBARGOS</span>
         </button>
 
         {/* INFORMES */}

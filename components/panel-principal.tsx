@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Pencil,
   Save,
+  Scale,
   Search,
   UserCircle,
   Users,
@@ -43,7 +44,11 @@ function getDiffs(original: Empleado, current: Empleado) {
     }))
 }
 
-export default function PanelPrincipal() {
+interface PanelPrincipalProps {
+  onVerEmbargos?: (empleadoId: number) => void
+}
+
+export default function PanelPrincipal({ onVerEmbargos }: PanelPrincipalProps) {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Empleado | null>(null)
   const [snapshot, setSnapshot] = useState<Empleado | null>(null)
@@ -465,6 +470,16 @@ export default function PanelPrincipal() {
                   </h2>
                 </div>
                 <div className="flex items-center gap-2">
+                  {onVerEmbargos && (
+                    <button
+                      onClick={() => onVerEmbargos(selected.id)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-50 hover:bg-blue-100 text-[#1e3a8a] border border-blue-200 transition"
+                      title="Abrir la ficha de embargos de este agente"
+                    >
+                      <Scale className="w-4 h-4" />
+                      <span>Embargos</span>
+                    </button>
+                  )}
                   {editing && (
                     <button
                       onClick={handleCancelEdit}

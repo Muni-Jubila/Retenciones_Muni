@@ -129,6 +129,21 @@ export async function buscarEmpleados(query: string): Promise<Empleado[]> {
   }
 }
 
+export async function getEmpleadoPorId(id: number): Promise<Empleado | null> {
+  try {
+    await requireAuthenticatedSession()
+    if (!Number.isInteger(id) || id <= 0) return null
+    const fila = await prisma.dATOS_PERSONALES_AGENTE_JUBILA.findFirst({
+      where: { ID_DATOS_PERSONALES_AGENTE_JUBILA: id, BIT_BORRADO: false },
+      include: includeRegimen,
+    })
+    return fila ? mapEmpleado(fila) : null
+  } catch (error) {
+    logServerError('[getEmpleadoPorId] Error:', error)
+    return null
+  }
+}
+
 export async function getUltimoEmpleado(): Promise<Empleado | null> {
   try {
     await requireAuthenticatedSession()
