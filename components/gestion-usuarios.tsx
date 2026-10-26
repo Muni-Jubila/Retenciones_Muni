@@ -10,21 +10,23 @@ import {
   actualizarRolUsuario,
   resetearContrasenaUsuario,
   eliminarUsuario,
+  listRolesRetenciones,
   type UsuarioListado,
+  type RolRetenciones,
 } from '@/app/actions/usuarios'
-
-const ROLES_VALIDOS = ['ADMIN', 'JUBILA'] as const
+import { isAdminRole } from '@/lib/roles'
 
 interface Mensaje { tipo: 'ok' | 'error'; texto: string }
 
 export default function GestionUsuarios() {
   const [usuarios, setUsuarios] = useState<UsuarioListado[]>([])
+  const [roles, setRoles] = useState<RolRetenciones[]>([])
   const [loading, setLoading] = useState(true)
   const [mensaje, setMensaje] = useState<Mensaje | null>(null)
 
   // Formulario crear
   const [nuevoNombre, setNuevoNombre] = useState('')
-  const [nuevoRol, setNuevoRol] = useState<string>('JUBILA')
+  const [nuevoRol, setNuevoRol] = useState('')
   const [nuevaClave, setNuevaClave] = useState('')
   const [creando, setCreando] = useState(false)
 
@@ -41,8 +43,10 @@ export default function GestionUsuarios() {
   const load = useCallback(async (silencioso = false) => {
     if (!silencioso) setLoading(true)
     try {
-      const data = await listUsuarios()
+      const [data, roleOptions] = await Promise.all([listUsuarios(), listRolesRetenciones()])
       setUsuarios(data)
+      setRoles(roleOptions)
+      setNuevoRol((current) => current || String(roleOptions.find((role) => !isAdminRole(role.nombre))?.id ?? roleOptions[0]?.id ?? ''))
     } finally {
       setLoading(false)
     }
@@ -56,14 +60,14 @@ export default function GestionUsuarios() {
 
   const handleCrear = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!nuevoNombre.trim() || !nuevaClave) return
+    if (!nuevoNombre.trim() || !nuevaClave || !nuevoRol) return
     setCreando(true)
     flash(null)
-    const r = await crearUsuario(nuevoNombre.trim(), nuevoRol, nuevaClave)
+    const r = await crearUsuario(nuevoNombre.trim(), Number(nuevoRol), nuevaClave)
     if (r.ok) {
       setNuevoNombre('')
       setNuevaClave('')
-      setNuevoRol('JUBILA')
+      setNuevoRol(String(roles.find((role) => !isAdminRole(role.nombre))?.id ?? roles[0]?.id ?? ''))
       flash({ tipo: 'ok', texto: 'Usuario creado. Entrará con la contraseña inicial y deberá cambiarla.' })
       await load(true)
     } else {
@@ -75,7 +79,7 @@ export default function GestionUsuarios() {
   const handleGuardarRol = async (id: number, rol: string) => {
     setGuardandoRol(id)
     flash(null)
-    const r = await actualizarRolUsuario(id, rol)
+    const r = await actualizarRolUsuario(id, Number(rol))
     if (r.ok) {
       flash({ tipo: 'ok', texto: 'Rol actualizado.' })
       await load(true)
@@ -122,9 +126,7 @@ export default function GestionUsuarios() {
       <h1 className="text-xl font-bold text-[#1e3a8a] mb-1">Gestión de Usuarios</h1>
       <p className="text-sm text-slate-500 mb-6">
         Administración de accesos del sistema de Retenciones. Solo se muestran los usuarios habilitados para Retenciones
-        (<span className="font-semibold">RETENCIONES = 1</span>). Cada usuario tiene un rol:{' '}
-        <span className="font-semibold">ADMIN</span> (acceso total) o <span className="font-semibold">JUBILA</span>{' '}
-        (acceso estándar).
+        (<span className="font-semibold">RETENCIONES = 1</span>). Los roles se administran desde el catálogo de Retenciones y son independientes de los roles de Jubilaciones.
       </p>
 
       {mensaje && (
@@ -159,7 +161,7 @@ export default function GestionUsuarios() {
                 onChange={(e) => setNuevoRol(e.target.value)}
                 className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-xs text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               >
-                {ROLES_VALIDOS.map((r) => <option key={r} value={r}>{r}</option>)}
+                {roles.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
               </select>
             </label>
             <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
@@ -174,7 +176,7 @@ export default function GestionUsuarios() {
             </label>
             <button
               type="submit"
-              disabled={creando || !nuevoNombre.trim() || nuevaClave.length < 5}
+              disabled={creando || !nuevoNombre.trim() || !nuevoRol || nuevaClave.length < 5}
               className="flex items-center gap-2 h-9 px-4 rounded-lg bg-[#1e3a8a] hover:bg-[#172554] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition"
             >
               {creando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
@@ -225,27 +227,27 @@ export default function GestionUsuarios() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold ${
-                            u.rol === 'ADMIN'
+                            isAdminRole(u.rol)
                               ? 'bg-[#1e3a8a]/10 border-[#1e3a8a]/30 text-[#1e3a8a]'
                               : 'bg-slate-100 border-slate-200 text-slate-600'
                           }`}>
-                            {u.rol === 'ADMIN' ? <ShieldCheck className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
+                            {isAdminRole(u.rol) ? <ShieldCheck className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
                             {u.rol}
                           </span>
                           <select
-                            value={rolDraft[u.id] ?? u.rol}
+                            value={rolDraft[u.id] ?? String(u.rolId ?? '')}
                             disabled={guardandoRol === u.id}
                             onChange={(e) => setRolDraft((d) => ({ ...d, [u.id]: e.target.value }))}
                             onBlur={(e) => {
                               const nuevoRolVal = e.target.value
-                              if (nuevoRolVal && nuevoRolVal !== u.rol) void handleGuardarRol(u.id, nuevoRolVal)
+                              if (nuevoRolVal && nuevoRolVal !== String(u.rolId ?? '')) void handleGuardarRol(u.id, nuevoRolVal)
                             }}
                             className="h-8 rounded-md border border-slate-300 bg-white px-2 text-[11px] text-slate-700 outline-none focus:border-blue-500 disabled:opacity-50"
                           >
-                            {ROLES_VALIDOS.map((r) => <option key={r} value={r}>{r}</option>)}
+                            {roles.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
                           </select>
                           {guardandoRol === u.id && <Loader2 className="w-3 h-3 animate-spin text-blue-400" />}
-                          {rolDraft[u.id] && rolDraft[u.id] !== u.rol && (
+                          {rolDraft[u.id] && rolDraft[u.id] !== String(u.rolId ?? '') && (
                             <button
                               type="button"
                               onClick={() => void handleGuardarRol(u.id, rolDraft[u.id]!)}

@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  engineType = "binary"
 }
 
 datasource db {
@@ -160,10 +161,12 @@ model USUARIO {
   NOMBRE_USUARIO                                                                                     String                           @unique(map: "UQ__USUARIO__1E139900200EE1AC") @db.VarChar(255)
   CONTRASENA_USUARIO                                                                                 String                           @db.VarChar(255)
   DEBE_CAMBIAR_CONTRASENA                                                                            Boolean                          @default(true)
-  // Rol único por usuario: 'ADMIN' (todo) o 'JUBILA' (sin carga masiva)
-  ROL                                                                                                String                           @default("JUBILA") @db.VarChar(20)
   ES_JUBILA                                                                                          Boolean                          @default(true) @map("JUBILA")
   ES_RETENCIONES                                                                                     Boolean                          @default(false) @map("RETENCIONES")
+  ID_ROL_JUBILA                                                                                       Int?
+  ID_ROL_RETENCIONES                                                                                  Int?
+  ROL_JUBILA                                                                                          ROL_JUBILA?                      @relation(fields: [ID_ROL_JUBILA], references: [ID_ROL_JUBILA])
+  ROL_RETENCIONES                                                                                     ROL_RETENCIONES?                 @relation(fields: [ID_ROL_RETENCIONES], references: [ID_ROL_RETENCIONES])
   ARCHIVO_JUBILACION                                                                                 ARCHIVO_JUBILACION[]             @relation("ARCHIVO_JUBILACION_USUARIO_SUBIDA")
   ARCHIVO_JUBILACION_USUARIO_ELIMINACION                                                             ARCHIVO_JUBILACION[]             @relation("ARCHIVO_JUBILACION_USUARIO_ELIMINACION")
   DATOS_PERSONALES_AGENTE_JUBILA                                                                     DATOS_PERSONALES_AGENTE_JUBILA[]
@@ -172,6 +175,22 @@ model USUARIO {
   JUBILA_JUBILA_USUARIO_CREACIONToUSUARIO                                                            JUBILA[]                         @relation("JUBILA_USUARIO_CREACIONToUSUARIO")
   JUBILA_JUBILA_USUARIO_MODIFICACIONToUSUARIO                                                        JUBILA[]                         @relation("JUBILA_USUARIO_MODIFICACIONToUSUARIO")
   SESION                                                                                             SESION[]
+}
+
+model ROL_RETENCIONES {
+  ID_ROL_RETENCIONES Int       @id @default(autoincrement())
+  NOMBRE_ROL         String    @db.VarChar(255)
+  USUARIO            USUARIO[]
+
+  @@map("Rol_Retenciones")
+}
+
+model ROL_JUBILA {
+  ID_ROL_JUBILA Int       @id @default(autoincrement())
+  NOMBRE_ROL    String    @db.VarChar(255)
+  USUARIO       USUARIO[]
+
+  @@map("Rol_Jubila")
 }
 
 model CARRERA_ADMINISTRATIVA {

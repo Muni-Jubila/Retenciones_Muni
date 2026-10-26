@@ -651,6 +651,13 @@ function buildConsultaWhere(filtros: ConsultaEmbargosFiltros): Prisma.EMBARGOWhe
   const hace30Dias = new Date()
   hace30Dias.setDate(hace30Dias.getDate() - 30)
 
+  const dnis = (filtros.dnis ?? [])
+    .map((dni) => dni.replace(/\D/g, ''))
+    .filter((dni) => dni.length > 0)
+  if (dnis.length > 0) {
+    condiciones.push({ DATOS_PERSONALES_AGENTE_JUBILA: { DNI_AGENTE: { in: [...new Set(dnis)] } } })
+  }
+
   if (filtros.estado && validarEstado(filtros.estado)) {
     condiciones.push({ ESTADO: filtros.estado })
   }
@@ -742,13 +749,20 @@ function buildConsultaWhere(filtros: ConsultaEmbargosFiltros): Prisma.EMBARGOWhe
 }
 
 export async function consultarEmbargos(filtros: ConsultaEmbargosFiltros): Promise<Embargo[]> {
-  if (isEmbargosMock()) return mock.consultarEmbargos(filtros)
+  const dnis = [...new Set((filtros.dnis ?? [])
+    .map((dni) => dni.replace(/\D/g, ''))
+    .filter((dni) => dni.length > 0))]
+  filtros = { ...filtros, dnis }
+  // Las consultas no deben devolver información personal ni embargos sin una búsqueda explícita por DNI.
+  if (isEmbargosMock()) return dnis.length > 0 ? mock.consultarEmbargos(filtros) : []
   try {
     await requireAuthenticatedSession()
+    if (dnis.length === 0) return []
     const filas = await prisma.eMBARGO.findMany({
       where: buildConsultaWhere(filtros),
       include: includeEmbargo,
-      orderBy: [{ FECHA_ALTA: 'desc' }, { ID_EMBARGO: 'desc' }],
+      // Del más viejo al más nuevo.
+      orderBy: [{ FECHA_ALTA: 'asc' }, { ID_EMBARGO: 'asc' }],
       take: 300,
     })
     const embargos = filas.map(mapEmbargo)

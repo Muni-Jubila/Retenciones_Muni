@@ -16,12 +16,7 @@ const TABS: { id: TabEmbargos; label: string; sublabel: string; icon: React.Elem
   { id: 'archivos', label: 'Archivos', sublabel: 'Indexar, restaurar y backup', icon: Archive },
 ]
 
-interface GestionEmbargosProps {
-  initialAgentId?: number | null
-  onInitialConsumed?: () => void
-}
-
-export default function GestionEmbargos({ initialAgentId, onInitialConsumed }: GestionEmbargosProps) {
+export default function GestionEmbargos() {
   const [activeTab, setActiveTab] = useState<TabEmbargos>('ficha')
   const [agenteParaAbrir, setAgenteParaAbrir] = useState<number | null>(null)
   const [tabsMontadas, setTabsMontadas] = useState<Set<TabEmbargos>>(() => new Set(['ficha']))
@@ -98,11 +93,8 @@ export default function GestionEmbargos({ initialAgentId, onInitialConsumed }: G
       <div className="p-6 print:p-0">
         <div className={activeTab === 'ficha' ? 'block' : 'hidden'}>
           <FichaAgente
-            initialAgenteId={agenteParaAbrir ?? initialAgentId ?? null}
-            onInitialConsumed={() => {
-              setAgenteParaAbrir(null)
-              onInitialConsumed?.()
-            }}
+            initialAgenteId={agenteParaAbrir}
+            onInitialConsumed={() => setAgenteParaAbrir(null)}
           />
         </div>
         {tabsMontadas.has('consultas') && (

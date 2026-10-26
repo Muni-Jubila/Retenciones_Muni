@@ -4,19 +4,18 @@ import { useEffect, useState } from 'react'
 import LoginPage from '@/components/login-page'
 import Sidebar, { type NavSection } from '@/components/sidebar'
 import TopBar from '@/components/top-bar'
-import PanelPrincipal from '@/components/panel-principal'
 import GestionEmbargos from '@/components/gestion-embargos'
 import GestionUsuarios from '@/components/gestion-usuarios'
 import CambiarContrasena from '@/components/cambiar-contrasena'
 import { getCurrentSession, logoutUsuario } from '@/app/actions/auth'
+import { isAdminRole } from '@/lib/roles'
 
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false)
   const [username, setUsername] = useState('')
   const [userId, setUserId] = useState<number>(1)
   const [role, setRole] = useState<string>('JUBILA')
-  const [activeSection, setActiveSection] = useState<NavSection>('inicio')
-  const [embargosAgentId, setEmbargosAgentId] = useState<number | null>(null)
+  const [activeSection, setActiveSection] = useState<NavSection>('embargos')
   const [mustChangePassword, setMustChangePassword] = useState(false)
   const [showChangePassword, setShowChangePassword] = useState(false)
 
@@ -57,7 +56,7 @@ export default function App() {
       setUsername('')
       setUserId(1)
       setRole('JUBILA')
-      setActiveSection('inicio')
+      setActiveSection('embargos')
     }
   }
 
@@ -94,22 +93,9 @@ export default function App() {
         />
 
         <main className="flex-1 overflow-y-auto">
-          {activeSection === 'inicio' && (
-            <PanelPrincipal
-              onVerEmbargos={(empleadoId) => {
-                setEmbargosAgentId(empleadoId)
-                setActiveSection('embargos')
-              }}
-            />
-          )}
-          {activeSection === 'embargos' && (
-            <GestionEmbargos
-              initialAgentId={embargosAgentId}
-              onInitialConsumed={() => setEmbargosAgentId(null)}
-            />
-          )}
+          {activeSection === 'embargos' && <GestionEmbargos />}
           {activeSection === 'informes' && <div />}
-          {activeSection === 'usuarios' && role === 'ADMIN' && <GestionUsuarios />}
+          {activeSection === 'usuarios' && isAdminRole(role) && <GestionUsuarios />}
         </main>
       </div>
     </div>

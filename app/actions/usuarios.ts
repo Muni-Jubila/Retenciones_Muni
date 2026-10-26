@@ -4,14 +4,18 @@ import { prisma } from '@/lib/prisma'
 import { requireAuthenticatedSession } from '@/lib/auth-session'
 import bcrypt from 'bcryptjs'
 import { logServerError } from '@/lib/safe-error'
+import { isAdminRole } from '@/lib/roles'
 
-export type RolUsuario = 'ADMIN' | 'JUBILA'
-const ROLES_VALIDOS: readonly RolUsuario[] = ['ADMIN', 'JUBILA']
+export interface RolRetenciones {
+  id: number
+  nombre: string
+}
 
 export interface UsuarioListado {
   id: number
   nombreUsuario: string
   rol: string
+  rolId: number | null
   debeCambiarContrasena: boolean
 }
 
@@ -23,10 +27,29 @@ export interface RespuestaAccion {
 /** Verifica que la sesión activa pertenezca a un ADMIN. */
 async function requireAdmin(): Promise<{ userId: number; username: string }> {
   const session = await requireAuthenticatedSession()
-  if (session.role !== 'ADMIN') {
+  if (!isAdminRole(session.role)) {
     throw new Error('No autorizado. Esta función requiere rol ADMIN.')
   }
   return { userId: session.userId, username: session.username }
+}
+
+async function adminRoleIds(): Promise<number[]> {
+  const roles = await prisma.rOL_RETENCIONES.findMany({ select: { ID_ROL_RETENCIONES: true, NOMBRE_ROL: true } })
+  return roles.filter((role) => isAdminRole(role.NOMBRE_ROL)).map((role) => role.ID_ROL_RETENCIONES)
+}
+
+export async function listRolesRetenciones(): Promise<RolRetenciones[]> {
+  try {
+    await requireAdmin()
+    const roles = await prisma.rOL_RETENCIONES.findMany({
+      orderBy: { NOMBRE_ROL: 'asc' },
+      select: { ID_ROL_RETENCIONES: true, NOMBRE_ROL: true },
+    })
+    return roles.map((role) => ({ id: role.ID_ROL_RETENCIONES, nombre: role.NOMBRE_ROL }))
+  } catch (error) {
+    logServerError('[listRolesRetenciones] Error:', error)
+    return []
+  }
 }
 
 export async function listUsuarios(): Promise<UsuarioListado[]> {
@@ -38,14 +61,16 @@ export async function listUsuarios(): Promise<UsuarioListado[]> {
       select: {
         ID_USUARIO: true,
         NOMBRE_USUARIO: true,
-        ROL: true,
+        ID_ROL_RETENCIONES: true,
+        ROL_RETENCIONES: { select: { NOMBRE_ROL: true } },
         DEBE_CAMBIAR_CONTRASENA: true,
       },
     })
     return usuarios.map((u) => ({
       id: u.ID_USUARIO,
       nombreUsuario: u.NOMBRE_USUARIO,
-      rol: u.ROL,
+      rol: u.ROL_RETENCIONES?.NOMBRE_ROL ?? 'Sin rol',
+      rolId: u.ID_ROL_RETENCIONES,
       debeCambiarContrasena: u.DEBE_CAMBIAR_CONTRASENA,
     }))
   } catch (error) {
@@ -56,7 +81,7 @@ export async function listUsuarios(): Promise<UsuarioListado[]> {
 
 export async function crearUsuario(
   nombreUsuario: string,
-  rol: string,
+  rolId: number,
   contrasenaInicial: string,
 ): Promise<RespuestaAccion> {
   try {
@@ -65,9 +90,8 @@ export async function crearUsuario(
     if (!nombre || nombre.length > 100) {
       return { ok: false, error: 'El nombre de usuario debe tener entre 1 y 100 caracteres.' }
     }
-    if (!ROLES_VALIDOS.includes(rol as RolUsuario)) {
-      return { ok: false, error: 'Rol inválido. Solo se permiten ADMIN o JUBILA.' }
-    }
+    if (!Number.isSafeInteger(rolId) || !(await prisma.rOL_RETENCIONES.findUnique({ where: { ID_ROL_RETENCIONES: rolId } })))
+      return { ok: false, error: 'Seleccione un rol válido para Retenciones.' }
     if (contrasenaInicial.length < 5 || contrasenaInicial.length > 25) {
       return { ok: false, error: 'La contraseña inicial debe tener entre 5 y 25 caracteres.' }
     }
@@ -83,7 +107,7 @@ export async function crearUsuario(
         NOMBRE_USUARIO: nombre,
         CONTRASENA_USUARIO: hash,
         DEBE_CAMBIAR_CONTRASENA: true,
-        ROL: (rol as RolUsuario).toUpperCase() === 'ADMIN' ? 'ADMIN' : 'JUBILA',
+        ID_ROL_RETENCIONES: rolId,
         ES_JUBILA: false,
         ES_RETENCIONES: true,
       },
@@ -95,12 +119,13 @@ export async function crearUsuario(
   }
 }
 
-export async function actualizarRolUsuario(id: number, rol: string): Promise<RespuestaAccion> {
+export async function actualizarRolUsuario(id: number, rolId: number): Promise<RespuestaAccion> {
   try {
     const admin = await requireAdmin()
-    if (!ROLES_VALIDOS.includes(rol as RolUsuario)) {
-      return { ok: false, error: 'Rol inválido. Solo se permiten ADMIN o JUBILA.' }
-    }
+    const rolNuevo = Number.isSafeInteger(rolId)
+      ? await prisma.rOL_RETENCIONES.findUnique({ where: { ID_ROL_RETENCIONES: rolId } })
+      : null
+    if (!rolNuevo) return { ok: false, error: 'Seleccione un rol válido para Retenciones.' }
 
     const target = await prisma.uSUARIO.findFirst({
       where: { ID_USUARIO: id, ES_RETENCIONES: true },
@@ -109,12 +134,13 @@ export async function actualizarRolUsuario(id: number, rol: string): Promise<Res
       return { ok: false, error: 'El usuario no existe o no pertenece a Retenciones.' }
     }
 
-    if (id === admin.userId && rol !== 'ADMIN') {
+    if (id === admin.userId && !isAdminRole(rolNuevo.NOMBRE_ROL)) {
       return { ok: false, error: 'No podés quitarte tu propio rol ADMIN.' }
     }
-    if (rol !== 'ADMIN' && target.ROL === 'ADMIN') {
+    const roleIds = await adminRoleIds()
+    if (!isAdminRole(rolNuevo.NOMBRE_ROL) && target.ID_ROL_RETENCIONES != null && roleIds.includes(target.ID_ROL_RETENCIONES)) {
       const adminsRestantes = await prisma.uSUARIO.count({
-        where: { ROL: 'ADMIN', ES_RETENCIONES: true },
+        where: { ID_ROL_RETENCIONES: { in: roleIds }, ES_RETENCIONES: true },
       })
       if (adminsRestantes <= 1) {
         return { ok: false, error: 'Debe existir al menos un usuario ADMIN en el sistema.' }
@@ -123,7 +149,7 @@ export async function actualizarRolUsuario(id: number, rol: string): Promise<Res
 
     await prisma.uSUARIO.update({
       where: { ID_USUARIO: id },
-      data: { ROL: rol.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'JUBILA' },
+      data: { ID_ROL_RETENCIONES: rolId },
     })
     return { ok: true }
   } catch (error) {
@@ -169,9 +195,10 @@ export async function eliminarUsuario(id: number): Promise<RespuestaAccion> {
     if (id === admin.userId) {
       return { ok: false, error: 'No podés eliminar tu propia cuenta.' }
     }
-    if (target.ROL === 'ADMIN') {
+    const roleIds = await adminRoleIds()
+    if (target.ID_ROL_RETENCIONES != null && roleIds.includes(target.ID_ROL_RETENCIONES)) {
       const adminsRestantes = await prisma.uSUARIO.count({
-        where: { ROL: 'ADMIN', ES_RETENCIONES: true },
+        where: { ID_ROL_RETENCIONES: { in: roleIds }, ES_RETENCIONES: true },
       })
       if (adminsRestantes <= 1) {
         return { ok: false, error: 'Debe existir al menos un usuario ADMIN en el sistema.' }

@@ -1,9 +1,10 @@
 'use client'
 
-import { FileText, LayoutDashboard, Scale, Users } from 'lucide-react'
+import { FileText, Scale, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isAdminRole } from '@/lib/roles'
 
-export type NavSection = 'inicio' | 'embargos' | 'informes' | 'usuarios'
+export type NavSection = 'embargos' | 'informes' | 'usuarios'
 
 interface SidebarProps {
   activeSection: NavSection
@@ -12,7 +13,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeSection, onSectionChange, role }: SidebarProps) {
-  const isAdmin = role === 'ADMIN'
+  const isAdmin = isAdminRole(role)
 
   return (
     <aside className="flex flex-col w-56 min-h-screen bg-[#172554] text-slate-200 flex-shrink-0">
@@ -28,20 +29,6 @@ export default function Sidebar({ activeSection, onSectionChange, role }: Sideba
 
       {/* Navigation */}
       <nav className="flex flex-col gap-1 px-3 pt-4">
-        {/* INICIO */}
-        <button
-          onClick={() => onSectionChange('inicio')}
-          className={cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold tracking-wide transition-colors w-full text-left',
-            activeSection === 'inicio'
-              ? 'bg-[#1d4ed8] text-white'
-              : 'text-blue-200 hover:bg-[#1e3a8a] hover:text-white'
-          )}
-        >
-          <LayoutDashboard className="w-4 h-4 flex-shrink-0" />
-          <span>INICIO</span>
-        </button>
-
         {/* EMBARGOS / RETENCIONES */}
         <button
           onClick={() => onSectionChange('embargos')}

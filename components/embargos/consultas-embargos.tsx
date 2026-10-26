@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { ArrowUpRight, Filter, Loader2, RefreshCw, Search, Scale, SlidersHorizontal } from 'lucide-react'
 import { consultarEmbargos } from '@/app/actions/embargos'
 import {
@@ -27,6 +27,7 @@ const ESTADO_OPTIONS = [
 
 export default function ConsultasEmbargos({ onOpenAgent }: ConsultasEmbargosProps) {
   const [tipo, setTipo] = useState<NonNullable<ConsultaEmbargosFiltros['tipo']>>('TODAS')
+  const [dnisTexto, setDnisTexto] = useState('')
   const [texto, setTexto] = useState('')
   const [estado, setEstado] = useState('')
   const [periodo, setPeriodo] = useState('')
@@ -34,13 +35,27 @@ export default function ConsultasEmbargos({ onOpenAgent }: ConsultasEmbargosProp
   const [loading, setLoading] = useState(false)
   const [consultado, setConsultado] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
 
   const tipoConfig = TIPOS_CONSULTA.find((item) => item.value === tipo) ?? TIPOS_CONSULTA[0]
   const resumen = resumenEstados(resultados)
 
+  const dnisIngresados = dnisTexto
+    .split(/[\s,;]+/)
+    .map((dni) => dni.replace(/\D/g, ''))
+    .filter((dni) => dni.length > 0)
+
   const ejecutar = async (overrides?: Partial<ConsultaEmbargosFiltros>) => {
+    const dnis = overrides?.dnis ?? dnisIngresados
+    if (dnis.length === 0) {
+      setResultados([])
+      setConsultado(false)
+      setAviso('Ingrese al menos un DNI para consultar. Puede ingresar varios separados por coma, punto y coma o espacio.')
+      return
+    }
     const filtros: ConsultaEmbargosFiltros = {
       tipo,
+      dnis,
       texto,
       estado,
       periodo,
@@ -59,24 +74,16 @@ export default function ConsultasEmbargos({ onOpenAgent }: ConsultasEmbargosProp
     }
   }
 
-  useEffect(() => {
-    void ejecutar({ tipo: 'TODAS', texto: '', estado: '', periodo: '' })
-    // La consulta inicial se ejecuta una sola vez.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const seleccionarTipo = (value: NonNullable<ConsultaEmbargosFiltros['tipo']>) => {
-    setTipo(value)
-    setTexto('')
-    void ejecutar({ tipo: value, texto: '', estado, periodo })
-  }
-
   const limpiar = () => {
     setTipo('TODAS')
+    setDnisTexto('')
     setTexto('')
     setEstado('')
     setPeriodo('')
-    void ejecutar({ tipo: 'TODAS', texto: '', estado: '', periodo: '' })
+    setResultados([])
+    setConsultado(false)
+    setError(null)
+    setAviso(null)
   }
 
   return (
@@ -96,33 +103,45 @@ export default function ConsultasEmbargos({ onOpenAgent }: ConsultasEmbargosProp
           </span>
         </div>
 
-        <div className="flex flex-wrap gap-1.5">
-          {TIPOS_CONSULTA.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              onClick={() => seleccionarTipo(item.value)}
-              className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
-                tipo === item.value
-                  ? 'border-[#1e3a8a] bg-[#1e3a8a] text-white shadow-sm'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-[#1e3a8a]'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+          <SelectField
+            label="Filtrar por"
+            value={tipo}
+            onChange={(value) => {
+              setTipo(value as NonNullable<ConsultaEmbargosFiltros['tipo']>)
+              setTexto('')
+            }}
+            options={TIPOS_CONSULTA.map((item) => ({
+              value: item.value,
+              label: item.value === 'AGENTE' ? 'Por agente' : item.value === 'PROGRAMA' ? 'Por programa' : item.value === 'EXPEDIENTE' ? 'Por expediente' : item.label,
+            }))}
+          />
           <TextField
-            label={tipoConfig.inputLabel ?? 'Texto libre'}
-            value={texto}
-            onChange={setTexto}
-            placeholder={tipoConfig.inputLabel ? `Ingrese ${tipoConfig.inputLabel.toLowerCase()}...` : 'Expediente, autos, DNI o apellido'}
+            label="DNI(s)"
+            value={dnisTexto}
+            onChange={(value) => {
+              setDnisTexto(value)
+              if (!value.replace(/\D/g, '')) {
+                setResultados([])
+                setConsultado(false)
+              }
+            }}
+            placeholder="Ej: 27887654, 33456123, 24555888"
+            hint="Varios DNI separados por coma, punto y coma o espacio."
           />
           <SelectField label="Estado" value={estado} onChange={setEstado} options={ESTADO_OPTIONS} />
           <TextField label="Período" value={periodo} onChange={setPeriodo} type="month" />
-          <div className="flex items-end gap-2">
+          {tipoConfig.inputLabel && (
+            <TextField
+              label={tipoConfig.inputLabel}
+              value={texto}
+              onChange={setTexto}
+              placeholder={tipoConfig.inputLabel.includes('opcional')
+                ? 'Filtro opcional...'
+                : `Ingrese ${tipoConfig.inputLabel.toLowerCase()}...`}
+            />
+          )}
+          <div className={`flex items-end gap-2 ${tipoConfig.inputLabel ? '' : 'md:col-span-2 lg:col-span-1'}`}>
             <button
               type="button"
               onClick={() => void ejecutar()}
@@ -147,8 +166,10 @@ export default function ConsultasEmbargos({ onOpenAgent }: ConsultasEmbargosProp
       </div>
 
       {error && <Banner tone="error" onClose={() => setError(null)}>{error}</Banner>}
+      {aviso && <Banner tone="warning" onClose={() => setAviso(null)}>{aviso}</Banner>}
 
-      {/* Resumen */}
+      {/* Resumen (solo tras ejecutar una consulta) */}
+      {(consultado || loading) && (
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
           { label: 'Resultados', value: String(resumen.total) },
@@ -162,6 +183,7 @@ export default function ConsultasEmbargos({ onOpenAgent }: ConsultasEmbargosProp
           </div>
         ))}
       </div>
+      )}
 
       {/* Resultados */}
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -171,7 +193,7 @@ export default function ConsultasEmbargos({ onOpenAgent }: ConsultasEmbargosProp
             Resultados de la consulta
             <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] text-slate-600">{resultados.length}</span>
           </h3>
-          <span className="text-[10px] text-slate-400">Máximo 300 registros. Abrí la ficha para modificar.</span>
+          <span className="text-[10px] text-slate-400">Ordenados del más viejo al más nuevo · Máximo 300 registros. Abrí la ficha para modificar.</span>
         </div>
 
         {loading ? (
@@ -183,11 +205,11 @@ export default function ConsultasEmbargos({ onOpenAgent }: ConsultasEmbargosProp
           <div className="p-5">
             <EmptyState
               icon={<Scale className="h-6 w-6" />}
-              title={consultado ? 'Sin resultados para esta consulta' : 'Ejecutá una consulta'}
+              title={consultado ? 'Sin resultados para esta consulta' : 'Ingrese uno o más DNI para consultar'}
               description={
                 consultado
-                  ? 'Probá cambiar el tipo de consulta, el estado o el período. También podés buscar por expediente o agente.'
-                  : 'Elegí un tipo de consulta y presioná “Consultar” para ver los embargos.'
+                  ? 'No hay embargos que coincidan con los DNI y filtros seleccionados. Probá con otro tipo de consulta, estado o período.'
+                  : 'Los resultados se muestran únicamente al ingresar DNI. Podés cargar varios separados por coma, punto y coma o espacio.'
               }
             />
           </div>

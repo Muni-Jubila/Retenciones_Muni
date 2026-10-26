@@ -57,6 +57,7 @@ export interface AuthenticatedSession {
   userId: number
   username: string
   role: string
+  roleId: number | null
   mustChangePassword: boolean
 }
 
@@ -68,11 +69,11 @@ export async function getAuthenticatedSession(): Promise<AuthenticatedSession | 
 
   const session = await prisma.sESION.findUnique({
     where: { ID_SESION: decoded.sessionId },
-    include: { USUARIO: true },
+    include: { USUARIO: { include: { ROL_RETENCIONES: true } } },
   })
   if (!session || session.FECHA_HORA_FIN) return null
 
-  if (!session.USUARIO.ES_RETENCIONES) {
+  if (!session.USUARIO.ES_RETENCIONES || !session.USUARIO.ID_ROL_RETENCIONES || !session.USUARIO.ROL_RETENCIONES) {
     await prisma.sESION.update({
       where: { ID_SESION: session.ID_SESION },
       data: { FECHA_HORA_FIN: new Date() },
@@ -95,7 +96,8 @@ export async function getAuthenticatedSession(): Promise<AuthenticatedSession | 
     sessionId: session.ID_SESION,
     userId: session.ID_USUARIO,
     username: session.USUARIO.NOMBRE_USUARIO,
-    role: session.USUARIO.ROL,
+    role: session.USUARIO.ROL_RETENCIONES?.NOMBRE_ROL ?? '',
+    roleId: session.USUARIO.ID_ROL_RETENCIONES,
     mustChangePassword: session.USUARIO.DEBE_CAMBIAR_CONTRASENA,
   }
 }

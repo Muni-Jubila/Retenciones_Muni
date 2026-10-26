@@ -51,6 +51,7 @@ export async function loginUsuario(
 
     const usuario = await prisma.uSUARIO.findUnique({
       where: { NOMBRE_USUARIO: username },
+      include: { ROL_RETENCIONES: true },
     })
 
     if (!usuario) {
@@ -70,6 +71,9 @@ export async function loginUsuario(
 
     if (!usuario.ES_RETENCIONES) {
       return { ok: false, error: 'Tu usuario no tiene acceso al sistema de Retenciones.' }
+    }
+    if (!usuario.ID_ROL_RETENCIONES || !usuario.ROL_RETENCIONES) {
+      return { ok: false, error: 'Tu usuario no tiene un rol asignado en Retenciones. Contactá al administrador.' }
     }
 
     // Compatibilidad de una sola vez para usuarios creados manualmente en SQL.
@@ -97,7 +101,7 @@ export async function loginUsuario(
       ok: true,
       username: usuario.NOMBRE_USUARIO,
       userId: usuario.ID_USUARIO,
-      role: usuario.ROL,
+      role: usuario.ROL_RETENCIONES?.NOMBRE_ROL ?? '',
       mustChangePassword: usuario.DEBE_CAMBIAR_CONTRASENA || !tieneHashBcrypt,
     }
   } catch (error) {
