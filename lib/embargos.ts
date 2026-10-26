@@ -141,6 +141,7 @@ export interface ConsultaEmbargosFiltros {
     | 'ACTIVOS_SIN_RETENCION'
     | 'PRIMER_MES'
   texto?: string
+  dnis?: string[]
   estado?: string
   periodo?: string
 }
