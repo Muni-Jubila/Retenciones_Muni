@@ -77,8 +77,10 @@ export default function App() {
     )
   }
 
+  const temaRosa = username.trim().toLocaleLowerCase('es') === 'ferrando_m'
+
   return (
-    <div className="flex h-screen overflow-hidden bg-[#eef2f7]">
+    <div className={`app-shell flex h-screen overflow-hidden bg-[#eef2f7]${temaRosa ? ' theme-pink' : ''}`}>
       <Sidebar
         activeSection={activeSection}
         onSectionChange={setActiveSection}
