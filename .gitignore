@@ -21,3 +21,5 @@ dev-server.err.log
 dev-server.log.err
 dev-server-error.log
 muni-dev.log
+# Oficios judiciales de ejemplo (contienen datos personales; no se versionan)
+/pdf/
