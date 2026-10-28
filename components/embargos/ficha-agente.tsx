@@ -59,6 +59,8 @@ import {
   TextField,
 } from '@/components/embargos/ui'
 import EmbargoForm from '@/components/embargos/embargo-form'
+import ImportarOficio, { type ArchivoOficio } from '@/components/embargos/importar-oficio'
+import type { DatosOficio } from '@/lib/oficio-parser'
 
 interface FichaAgenteProps {
   initialAgenteId?: number | null
@@ -66,6 +68,29 @@ interface FichaAgenteProps {
 }
 
 type Modo = 'ver' | 'nuevo' | 'editar'
+
+interface OficioImportado {
+  datos: DatosOficio
+  archivo: ArchivoOficio
+}
+
+/** Convierte los datos detectados en el PDF a valores del formulario de embargo. */
+function oficioToPrefill(datos: DatosOficio): Partial<EmbargoInput> {
+  const prefill: Partial<EmbargoInput> = {}
+  if (datos.autos) prefill.autos = datos.autos
+  if (datos.expediente) prefill.expediente = datos.expediente
+  if (datos.fechaExpediente) prefill.fechaExpediente = datos.fechaExpediente
+  if (datos.cuenta) prefill.cuenta = datos.cuenta
+  if (datos.sucursal) prefill.sucursal = datos.sucursal
+  if (datos.juez) prefill.juez = datos.juez
+  // La secretaría del formulario es la judicial, no la repartición del agente:
+  // si el oficio no la trae, debe quedar vacía en lugar de heredar "SALUD", etc.
+  prefill.secretaria = datos.secretaria
+  if (datos.tipoProceso) prefill.tipoProceso = datos.tipoProceso
+  if (datos.monto > 0) prefill.deuda = moneyToInput(datos.monto)
+  if (datos.numeroOficio) prefill.observaciones = `Oficio judicial N° ${datos.numeroOficio}.`
+  return prefill
+}
 
 function DetailItem({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {
   return (
@@ -209,6 +234,12 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
   const [retencionDelete, setRetencionDelete] = useState<number | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
 
+  // Importación de oficios judiciales en PDF.
+  const [prefillOficio, setPrefillOficio] = useState<Partial<EmbargoInput> | null>(null)
+  const [oficioAdjunto, setOficioAdjunto] = useState<ArchivoOficio | null>(null)
+  const [oficioPendiente, setOficioPendiente] = useState<OficioImportado | null>(null)
+  const [formRevision, setFormRevision] = useState(0)
+
   const selected = useMemo(
     () => embargos.find((item) => item.id === selectedId) ?? null,
     [embargos, selectedId],
@@ -239,7 +270,18 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
     })
   }
 
-  const cargarAgente = async (empleado: Empleado) => {
+  const aplicarOficio = (oficio: OficioImportado) => {
+    setPrefillOficio(oficioToPrefill(oficio.datos))
+    setOficioAdjunto(oficio.archivo)
+    setOficioPendiente(null)
+    setModo('nuevo')
+    setFormError(null)
+    setFormField(null)
+    setNotice(null)
+    setFormRevision((value) => value + 1)
+  }
+
+  const cargarAgente = async (empleado: Empleado, oficio?: OficioImportado | null) => {
     setAgente(empleado)
     setResultados([])
     setSinResultados(false)
@@ -258,6 +300,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
     } finally {
       setLoadingAgent(false)
     }
+    if (oficio) aplicarOficio(oficio)
   }
 
   useEffect(() => {
@@ -308,9 +351,10 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
     }
   }, [selectedId, refreshKey])
 
-  const handleSearch = async () => {
-    const texto = query.trim()
+  const handleSearch = async (textoOverride?: string, oficioOverride?: OficioImportado | null) => {
+    const texto = (textoOverride ?? query).trim()
     if (!texto) return
+    const oficio = oficioOverride ?? oficioPendiente
     setSearching(true)
     setError(null)
     setSinResultados(false)
@@ -320,7 +364,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
       if (encontrados.length === 0) {
         setSinResultados(true)
       } else if (encontrados.length === 1) {
-        await cargarAgente(encontrados[0])
+        await cargarAgente(encontrados[0], oficio)
       } else {
         setResultados(encontrados)
       }
@@ -328,6 +372,26 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
       setError('Error al buscar el agente. Verifique la conexión con la base de datos.')
     } finally {
       setSearching(false)
+    }
+  }
+
+  const handleImportarOficio = async (empleado: Empleado, datos: DatosOficio, archivo: ArchivoOficio) => {
+    const oficio = { datos, archivo }
+    if (agente?.id === empleado.id) {
+      aplicarOficio(oficio)
+      return
+    }
+    await cargarAgente(empleado, oficio)
+  }
+
+  const handleBuscarAgenteOficio = (datos: DatosOficio, archivo: ArchivoOficio, dni?: string) => {
+    const oficio = { datos, archivo }
+    setOficioPendiente(oficio)
+    if (dni) {
+      setQuery(dni)
+      void handleSearch(dni, oficio)
+    } else {
+      setNotice('Buscá al agente manualmente. Al seleccionarlo se abrirá el embargo con los datos del oficio.')
     }
   }
 
@@ -349,6 +413,9 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
       }
 
       setModo('ver')
+      setPrefillOficio(null)
+      setOficioAdjunto(null)
+      setOficioPendiente(null)
       setNotice(modo === 'editar' ? 'Embargo modificado correctamente.' : 'Embargo creado correctamente.')
       await recargarEmbargos(agente.id, resultado.embargo?.id)
       setRefreshKey((key) => key + 1)
@@ -406,14 +473,20 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
   }
 
   const openNuevo = () => {
+    setPrefillOficio(null)
+    setOficioAdjunto(null)
+    setOficioPendiente(null)
     setModo('nuevo')
     setFormError(null)
     setFormField(null)
     setNotice(null)
+    setFormRevision((value) => value + 1)
   }
 
   const openEditar = () => {
     if (!selected) return
+    setPrefillOficio(null)
+    setOficioAdjunto(null)
     setModo('editar')
     setFormError(null)
     setFormField(null)
@@ -518,6 +591,13 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
         </p>
       </div>
 
+      {/* Importación de oficios judiciales */}
+      <ImportarOficio
+        onImport={(empleado, datos, archivo) => void handleImportarOficio(empleado, datos, archivo)}
+        onBuscarAgente={handleBuscarAgenteOficio}
+        onQuitar={() => setOficioAdjunto(null)}
+      />
+
       {sinResultados && (
         <Banner tone="warning" onClose={() => setSinResultados(false)}>
           No se encontró ningún agente con ese dato. Probá con el DNI completo o parte del apellido.
@@ -544,7 +624,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
               <button
                 key={empleado.id}
                 type="button"
-                onClick={() => void cargarAgente(empleado)}
+                onClick={() => void cargarAgente(empleado, oficioPendiente)}
                 className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-blue-50"
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-[#1e3a8a]">
@@ -650,13 +730,20 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
           {/* Formulario inline */}
           {modo !== 'ver' && (
             <EmbargoForm
-              key={modo === 'editar' ? `edit-${selected?.id}` : 'nuevo'}
+              key={modo === 'editar' ? `edit-${selected?.id}` : `nuevo-${formRevision}`}
               agente={agente}
               initial={modo === 'editar' ? selected : null}
+              prefill={modo === 'nuevo' ? prefillOficio : null}
+              oficioUrl={modo === 'nuevo' ? oficioAdjunto?.url ?? null : null}
+              oficioNombre={modo === 'nuevo' ? oficioAdjunto?.nombre ?? null : null}
               saving={saving}
               error={formError}
               field={formField}
-              onCancel={() => setModo('ver')}
+              onCancel={() => {
+                setModo('ver')
+                setPrefillOficio(null)
+                setOficioAdjunto(null)
+              }}
               onSubmit={(input) => void handleSaveEmbargo(input)}
             />
           )}
@@ -704,12 +791,13 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px] text-xs">
+                <table className="w-full min-w-[980px] text-xs">
                   <thead className="bg-slate-100 text-[9px] uppercase tracking-wider text-slate-500">
                     <tr>
                       <th className="w-10 px-2 py-2 text-center">M</th>
                       <th className="px-3 py-2 text-left">Autos</th>
-                      <th className="px-3 py-2 text-left">Expediente</th>
+                      <th className="px-3 py-2 text-left">Exp. Judicial</th>
+                      <th className="px-3 py-2 text-left">Exp. Retenciones</th>
                       <th className="px-3 py-2 text-left">Fecha</th>
                       <th className="px-3 py-2 text-right">Deuda</th>
                       <th className="px-3 py-2 text-right">Retención</th>
@@ -743,6 +831,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                             {embargo.autos || '—'}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-600">{embargo.expediente || '—'}</td>
+                          <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-500">{embargo.expedienteRetenciones || '—'}</td>
                           <td className="whitespace-nowrap px-3 py-2 text-slate-500">{embargo.fechaExpediente || '—'}</td>
                           <td className="whitespace-nowrap px-3 py-2 text-right"><Money value={embargo.deuda} className="text-slate-700" /></td>
                           <td className="whitespace-nowrap px-3 py-2 text-right"><Money value={embargo.importeMensual} className="text-slate-700" /></td>
@@ -775,7 +864,8 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                       )}
                     </div>
                     <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                      {selected.autos || 'Sin autos'} · Expediente {selected.expediente || 's/n'}
+                      {selected.autos || 'Sin autos'} · Exp. judicial {selected.expediente || 's/n'} · Exp. retenciones{' '}
+                      {selected.expedienteRetenciones || 's/n'}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 print:hidden">
@@ -819,7 +909,8 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
 
                 <div className="grid grid-cols-2 gap-4 px-4 py-4 md:grid-cols-4">
                   <DetailItem label="Autos" value={selected.autos} className="col-span-2 md:col-span-4" />
-                  <DetailItem label="Expediente N°" value={<span className="font-mono">{selected.expediente}</span>} />
+                  <DetailItem label="Expediente Judicial N°" value={<span className="font-mono">{selected.expediente}</span>} />
+                  <DetailItem label="Expediente Retenciones N°" value={<span className="font-mono">{selected.expedienteRetenciones}</span>} />
                   <DetailItem label="Fecha expediente" value={selected.fechaExpediente} />
                   <DetailItem label="Cuenta N°" value={<span className="font-mono">{selected.cuenta}</span>} />
                   <DetailItem label="Sucursal" value={selected.sucursal} />

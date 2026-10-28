@@ -215,14 +215,15 @@ export default function ConsultasEmbargos({ onOpenAgent }: ConsultasEmbargosProp
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] text-xs">
+            <table className="w-full min-w-[1180px] text-xs">
               <thead className="bg-slate-100 text-[9px] uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="w-9 px-2 py-2 text-center">M</th>
                   <th className="px-3 py-2 text-left">DNI</th>
                   <th className="px-3 py-2 text-left">Agente</th>
                   <th className="px-3 py-2 text-left">Autos</th>
-                  <th className="px-3 py-2 text-left">Expediente</th>
+                  <th className="px-3 py-2 text-left">Exp. Judicial</th>
+                  <th className="px-3 py-2 text-left">Exp. Retenciones</th>
                   <th className="px-3 py-2 text-left">Fecha</th>
                   <th className="px-3 py-2 text-left">Estado</th>
                   <th className="px-3 py-2 text-right">Deuda</th>
@@ -246,6 +247,7 @@ export default function ConsultasEmbargos({ onOpenAgent }: ConsultasEmbargosProp
                     <td className="max-w-[190px] truncate px-3 py-2 font-semibold text-slate-800" title={embargo.agente}>{embargo.agente}</td>
                     <td className="max-w-[230px] truncate px-3 py-2 text-slate-600" title={embargo.autos}>{embargo.autos || '—'}</td>
                     <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-600">{embargo.expediente || '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-500">{embargo.expedienteRetenciones || '—'}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-slate-500">{embargo.fechaExpediente || '—'}</td>
                     <td className="whitespace-nowrap px-3 py-2"><EstadoBadge estado={embargo.estado} /></td>
                     <td className="whitespace-nowrap px-3 py-2 text-right"><Money value={embargo.deuda} /></td>

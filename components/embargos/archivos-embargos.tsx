@@ -291,7 +291,7 @@ export default function ArchivosEmbargos() {
                     <tr>
                       <th className="px-2 py-1.5 text-left">DNI</th>
                       <th className="px-2 py-1.5 text-left">Agente</th>
-                      <th className="px-2 py-1.5 text-left">Expediente</th>
+                      <th className="px-2 py-1.5 text-left">Exp. Judicial</th>
                       <th className="px-2 py-1.5 text-left">Detalle</th>
                     </tr>
                   </thead>

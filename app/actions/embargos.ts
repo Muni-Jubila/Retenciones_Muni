@@ -10,6 +10,7 @@ import { composeFullName, dbDateToStr } from '@/lib/empleados'
 import { getDateValidationError } from '@/lib/format-utils'
 import {
   ESTADOS_EMBARGO,
+  formatExpedienteRetenciones,
   periodoActual,
   periodoLabel,
   parseMoneyInput,
@@ -99,6 +100,7 @@ function mapEmbargo(fila: EmbargoDb): Embargo {
     estado: (fila.ESTADO as EstadoEmbargo) ?? 'ESPERA',
     autos: fila.AUTOS ?? '',
     expediente: fila.EXPEDIENTE ?? '',
+    expedienteRetenciones: formatExpedienteRetenciones(fila.NRO_EXPEDIENTE_RETENCIONES),
     fechaExpediente: dbDateToStr(fila.FECHA_EXPEDIENTE),
     cuenta: fila.CUENTA ?? '',
     sucursal: fila.SUCURSAL ?? '',
@@ -1073,6 +1075,7 @@ interface BackupEmbargo {
   estado: string
   autos: string
   expediente: string
+  expedienteRetenciones: string
   fechaExpediente: string
   cuenta: string
   sucursal: string
@@ -1117,6 +1120,7 @@ export async function exportarBackup(): Promise<{ ok: boolean; error?: string; c
           estado: embargo.estado,
           autos: embargo.autos,
           expediente: embargo.expediente,
+          expedienteRetenciones: embargo.expedienteRetenciones,
           fechaExpediente: embargo.fechaExpediente,
           cuenta: embargo.cuenta,
           sucursal: embargo.sucursal,

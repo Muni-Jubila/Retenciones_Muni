@@ -354,7 +354,7 @@ export default function ActualizarEmbargos() {
                 <thead className="sticky top-0 bg-slate-100 uppercase tracking-wider text-slate-500">
                   <tr>
                     <th className="px-2 py-1.5 text-left">Agente</th>
-                    <th className="px-2 py-1.5 text-left">Expediente</th>
+                    <th className="px-2 py-1.5 text-left">Exp. Judicial</th>
                     <th className="px-2 py-1.5 text-right">Retención</th>
                     <th className="px-2 py-1.5 text-right">Saldo</th>
                   </tr>
@@ -477,7 +477,7 @@ export default function ActualizarEmbargos() {
                   <tr>
                     <th className="px-3 py-2 text-left">Agente</th>
                     <th className="px-3 py-2 text-left">Autos</th>
-                    <th className="px-3 py-2 text-left">Expediente</th>
+                    <th className="px-3 py-2 text-left">Exp. Judicial</th>
                     <th className="px-3 py-2 text-right">Saldo</th>
                     <th className="px-3 py-2 text-center">Acción</th>
                   </tr>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { FilePlus2, Save, X } from 'lucide-react'
+import { FilePlus2, FileText, Save, X } from 'lucide-react'
 import { ESTADOS_EMBARGO, type Embargo, type EmbargoInput } from '@/lib/embargos'
 import type { Empleado } from '@/lib/empleados'
 import { formatDate } from '@/lib/format-utils'
@@ -10,6 +10,10 @@ import { Banner, MoneyField, SelectField, TextField } from '@/components/embargo
 interface EmbargoFormProps {
   agente: Empleado
   initial?: Embargo | null
+  /** Datos detectados en un oficio judicial que se usan al crear el embargo. */
+  prefill?: Partial<EmbargoInput> | null
+  oficioUrl?: string | null
+  oficioNombre?: string | null
   saving: boolean
   error?: string | null
   field?: string | null
@@ -17,9 +21,12 @@ interface EmbargoFormProps {
   onSubmit: (input: EmbargoInput) => void
 }
 
-function fromEmbargo(agente: Empleado, initial?: Embargo | null): EmbargoInput {
+function fromEmbargo(
+  agente: Empleado,
+  initial?: Embargo | null,
+  prefill?: Partial<EmbargoInput> | null,
+): EmbargoInput {
   return {
-    idAgente: agente.id,
     estado: initial?.estado ?? 'ESPERA',
     autos: initial?.autos ?? '',
     expediente: initial?.expediente ?? '',
@@ -36,19 +43,24 @@ function fromEmbargo(agente: Empleado, initial?: Embargo | null): EmbargoInput {
     porcentaje: initial?.porcentaje ? String(initial.porcentaje).replace('.', ',') : '',
     marcaEspecial: initial?.marcaEspecial ?? '',
     observaciones: initial?.observaciones ?? '',
+    ...prefill,
+    idAgente: agente.id,
   }
 }
 
 export default function EmbargoForm({
   agente,
   initial,
+  prefill,
+  oficioUrl,
+  oficioNombre,
   saving,
   error,
   field,
   onCancel,
   onSubmit,
 }: EmbargoFormProps) {
-  const [form, setForm] = useState<EmbargoInput>(() => fromEmbargo(agente, initial))
+  const [form, setForm] = useState<EmbargoInput>(() => fromEmbargo(agente, initial, prefill))
   const [localError, setLocalError] = useState<string | null>(null)
 
   const update = (key: keyof EmbargoInput, value: string) => {
@@ -58,7 +70,7 @@ export default function EmbargoForm({
   const handleSubmit = () => {
     setLocalError(null)
     if (!form.expediente.trim() && !form.autos.trim()) {
-      setLocalError('Ingrese al menos los autos o el número de expediente.')
+      setLocalError('Ingrese al menos los autos o el número de expediente judicial.')
       return
     }
     if (form.fechaExpediente.trim() && !/^\d{2}\/\d{2}\/\d{4}$/.test(form.fechaExpediente.trim())) {
@@ -76,23 +88,45 @@ export default function EmbargoForm({
           <div>
             <h3 className="text-sm font-bold">{initial ? 'Modificar embargo' : 'Nuevo embargo'}</h3>
             <p className="text-[10px] text-blue-200">
-              {initial ? `Expediente ${initial.expediente || 's/n'} · ${initial.autos || 'sin autos'}` : 'Complete los datos en esta misma pantalla.'}
+              {initial
+                ? `Exp. judicial ${initial.expediente || 's/n'} · Exp. retenciones ${initial.expedienteRetenciones || 's/n'}`
+                : 'Complete los datos en esta misma pantalla o importe un oficio judicial.'}
             </p>
           </div>
         </div>
-        <span className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide">
-          Estado: {ESTADOS_EMBARGO.find((item) => item.value === form.estado)?.label}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {oficioUrl && (
+            <a
+              href={oficioUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white transition hover:bg-white/20"
+              title={oficioNombre ?? 'Abrir oficio judicial'}
+            >
+              <FileText className="h-3 w-3" />
+              Ver oficio
+            </a>
+          )}
+          <span className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide">
+            Estado: {ESTADOS_EMBARGO.find((item) => item.value === form.estado)?.label}
+          </span>
+        </div>
       </div>
 
-      <div className="space-y-5 p-4">
+      <div className="space-y-4 p-4">
         {(localError || error) && <Banner tone="error" onClose={() => setLocalError(null)}>{localError ?? error}</Banner>}
+        {prefill && (
+          <Banner tone="info">
+            Los datos se completaron automáticamente desde el oficio judicial. Revisá la vista previa del PDF y corregí
+            cualquier campo antes de guardar.
+          </Banner>
+        )}
 
-        <section>
-          <h4 className="mb-2 border-b border-slate-100 pb-1 text-[10px] font-bold uppercase tracking-widest text-[#1e3a8a]">
-            Agente / Repartición
+        <section className="overflow-hidden rounded-lg border border-slate-200">
+          <h4 className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#1e3a8a]">
+            Datos personales
           </h4>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 p-3 md:grid-cols-4">
             <TextField label="Agente" value={agente.nombreCompleto} onChange={() => {}} readOnly />
             <TextField label="Documento" value={agente.dni} onChange={() => {}} readOnly />
             <TextField label="Cargo" value={agente.cargo} onChange={() => {}} readOnly />
@@ -101,11 +135,11 @@ export default function EmbargoForm({
           </div>
         </section>
 
-        <section>
-          <h4 className="mb-2 border-b border-slate-100 pb-1 text-[10px] font-bold uppercase tracking-widest text-[#1e3a8a]">
+        <section className="overflow-hidden rounded-lg border border-slate-200">
+          <h4 className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#1e3a8a]">
             Datos del expediente y del juicio
           </h4>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 p-3 md:grid-cols-4">
             <label className="col-span-2 flex flex-col gap-1 md:col-span-4">
               <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                 Autos
@@ -120,12 +154,20 @@ export default function EmbargoForm({
               />
             </label>
             <TextField
-              label="Expediente N°"
+              label="Expediente Judicial N°"
               value={form.expediente}
               onChange={(value) => update('expediente', value)}
               placeholder="006.148/26"
               maxLength={100}
               error={field === 'expediente' ? error : null}
+            />
+            <TextField
+              label="Expediente Retenciones N°"
+              value={initial?.expedienteRetenciones ?? ''}
+              onChange={() => {}}
+              readOnly
+              placeholder={initial ? '—' : 'Se asigna automáticamente'}
+              hint={initial ? 'N° interno de retenciones.' : 'Correlativo automático al guardar (000.000/000).'}
             />
             <TextField
               label="Fecha expediente"
@@ -169,32 +211,17 @@ export default function EmbargoForm({
           </div>
         </section>
 
-        <section>
-          <h4 className="mb-2 border-b border-slate-100 pb-1 text-[10px] font-bold uppercase tracking-widest text-[#1e3a8a]">
+        <section className="overflow-hidden rounded-lg border border-slate-200">
+          <h4 className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#1e3a8a]">
             Importes y estado
           </h4>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 p-3 md:grid-cols-4">
             <MoneyField
               label="Deuda"
               value={form.deuda}
               onChange={(value) => update('deuda', value)}
               hint="Importe total del embargo."
               error={field === 'deuda' ? error : null}
-            />
-            <MoneyField
-              label="Retención mensual"
-              value={form.importeMensual}
-              onChange={(value) => update('importeMensual', value)}
-              hint="Se usa al imputar el período."
-              error={field === 'importeMensual' ? error : null}
-            />
-            <MoneyField
-              label="Porcentaje (%)"
-              value={form.porcentaje}
-              onChange={(value) => update('porcentaje', value)}
-              placeholder="0,00"
-              hint="Opcional, si no hay importe fijo."
-              error={field === 'porcentaje' ? error : null}
             />
             <TextField
               label="Marca especial"
@@ -210,7 +237,7 @@ export default function EmbargoForm({
               options={ESTADOS_EMBARGO.map((item) => ({ value: item.value, label: `${item.letra} · ${item.label}` }))}
               hint="E = espera · A = activo · B = baja · C = cancelado"
             />
-            <label className="col-span-2 flex flex-col gap-1 md:col-span-3">
+            <label className="col-span-2 flex flex-col gap-1 md:col-span-4">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Observaciones</span>
               <textarea
                 value={form.observaciones}
@@ -227,7 +254,7 @@ export default function EmbargoForm({
 
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
         <p className="mr-auto text-[10px] text-slate-400">
-          Ingresá al menos autos o expediente. El saldo se calcula automáticamente con las retenciones.
+          Ingresá al menos autos o expediente judicial. El saldo se calcula automáticamente con las retenciones.
         </p>
         <button
           type="button"

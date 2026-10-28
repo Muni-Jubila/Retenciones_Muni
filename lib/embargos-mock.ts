@@ -1,5 +1,6 @@
 import type { Empleado } from '@/lib/empleados'
 import {
+  formatExpedienteRetenciones,
   formatMoney,
   parseMoneyInput,
   roundMoney,
@@ -87,6 +88,7 @@ interface MockEmbargo {
   estado: EstadoEmbargo
   autos: string
   expediente: string
+  nroExpedienteRetenciones?: number
   fechaExpediente: string
   cuenta: string
   sucursal: string
@@ -261,6 +263,7 @@ function mapEmbargo(m: MockEmbargo): Embargo {
     estado: m.estado,
     autos: m.autos,
     expediente: m.expediente,
+    expedienteRetenciones: formatExpedienteRetenciones(m.nroExpedienteRetenciones ?? m.id),
     fechaExpediente: m.fechaExpediente,
     cuenta: m.cuenta,
     sucursal: m.sucursal,
@@ -529,9 +532,13 @@ export async function eliminarRetencion(id: number): Promise<{ ok: boolean; erro
 export async function consultarEmbargos(filtros: ConsultaEmbargosFiltros): Promise<Embargo[]> {
   const tipo = filtros.tipo ?? 'TODAS'
   const texto = (filtros.texto ?? '').trim().toLowerCase()
+  const dnis = (filtros.dnis ?? [])
+    .map((dni) => dni.replace(/\D/g, ''))
+    .filter((dni) => dni.length > 0)
   const hace30Dias = new Date()
   hace30Dias.setDate(hace30Dias.getDate() - 30)
   let lista = mockEmbargos.map(mapEmbargo)
+  if (dnis.length > 0) lista = lista.filter((e) => dnis.includes(e.dni.replace(/\D/g, '')))
   if (filtros.estado) lista = lista.filter((e) => e.estado === filtros.estado)
   if (filtros.periodo) {
     lista = lista.filter((e) => {
@@ -541,7 +548,7 @@ export async function consultarEmbargos(filtros: ConsultaEmbargosFiltros): Promi
   }
   switch (tipo) {
     case 'AGENTE':
-      if (texto) lista = lista.filter((e) => e.dni.includes(texto.replace(/[.\s-]/g, '')) || e.agente.toLowerCase().includes(texto))
+      if (texto) lista = lista.filter((e) => e.dni.includes(texto.replace(/[.\s-]/g, '')))
       break
     case 'PROGRAMA':
       if (texto) lista = lista.filter((e) => e.programa.toLowerCase().includes(texto))
@@ -578,7 +585,12 @@ export async function consultarEmbargos(filtros: ConsultaEmbargosFiltros): Promi
       if (texto) lista = lista.filter((e) => e.expediente.toLowerCase().includes(texto) || e.autos.toLowerCase().includes(texto) || e.dni.includes(texto.replace(/[.\s-]/g, '')) || e.agente.toLowerCase().includes(texto))
       break
   }
-  return lista
+  // Del más viejo al más nuevo.
+  return lista.sort((a, b) => {
+    const fa = new Date(a.fechaAlta).getTime() || 0
+    const fb = new Date(b.fechaAlta).getTime() || 0
+    return fa - fb || a.id - b.id
+  })
 }
 
 export async function actualizarEsperas(): Promise<{ ok: boolean; error?: string; procesados: number; activados: number; cancelados: number; ajustados: number }> {
@@ -685,6 +697,7 @@ export async function exportarBackup(): Promise<{ ok: boolean; error?: string; c
       estado: m.estado,
       autos: m.autos,
       expediente: m.expediente,
+      expedienteRetenciones: formatExpedienteRetenciones(m.nroExpedienteRetenciones ?? m.id),
       fechaExpediente: m.fechaExpediente,
       cuenta: m.cuenta,
       sucursal: m.sucursal,

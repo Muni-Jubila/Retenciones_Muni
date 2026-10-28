@@ -5,6 +5,16 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // pdf.js (usado por unpdf) debe ejecutarse en Node: si se empaqueta, falla al
+  // resolver sus assets y workers internos.
+  serverExternalPackages: ['unpdf'],
+  experimental: {
+    serverActions: {
+      // Los oficios en PDF se envían como data URL; 6 MB de PDF equivalen a
+      // ~8 MB en base64 más el overhead del formulario.
+      bodySizeLimit: '12mb',
+    },
+  },
   async headers() {
     return [
       {

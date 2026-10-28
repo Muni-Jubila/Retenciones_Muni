@@ -48,6 +48,18 @@ export function getEstadoConfig(estado: string): EstadoEmbargoConfig {
   return ESTADOS_EMBARGO.find((item) => item.value === estado) ?? ESTADOS_EMBARGO[0]
 }
 
+/**
+ * Formatea el N° interno de retenciones con el formato legacy 000.000/000.
+ * El número es un correlativo que asigna la base al crear el embargo.
+ */
+export function formatExpedienteRetenciones(numero: number | null | undefined): string {
+  const value = Number(numero ?? 0)
+  if (!Number.isInteger(value) || value <= 0) return ''
+  const padded = String(value).padStart(9, '0')
+  if (padded.length > 9) return String(value)
+  return `${padded.slice(0, 3)}.${padded.slice(3, 6)}/${padded.slice(6)}`
+}
+
 export interface Embargo {
   id: number
   idAgente: number
@@ -55,7 +67,10 @@ export interface Embargo {
   agente: string
   estado: EstadoEmbargo
   autos: string
+  /** N° de expediente judicial (SAC). */
   expediente: string
+  /** N° interno de retenciones, formato 000.000/000. */
+  expedienteRetenciones: string
   fechaExpediente: string
   cuenta: string
   sucursal: string
@@ -140,8 +155,8 @@ export interface ConsultaEmbargosFiltros {
     | 'BAJAS_REN_DEC'
     | 'ACTIVOS_SIN_RETENCION'
     | 'PRIMER_MES'
-  texto?: string
   dnis?: string[]
+  texto?: string
   estado?: string
   periodo?: string
 }
@@ -161,18 +176,18 @@ export interface ResumenRetencion {
 }
 
 export const TIPOS_CONSULTA: { value: NonNullable<ConsultaEmbargosFiltros['tipo']>; label: string; ayuda: string; inputLabel?: string }[] = [
-  { value: 'TODAS', label: 'Todas', ayuda: 'Listado general de embargos cargados.' },
-  { value: 'AGENTE', label: 'Por agente', ayuda: 'Busca por DNI, apellido o nombre del agente.', inputLabel: 'DNI, apellido o nombre' },
-  { value: 'PROGRAMA', label: 'Por programa', ayuda: 'Filtra por código o nombre del programa.', inputLabel: 'Programa' },
-  { value: 'EXPEDIENTE', label: 'Por expediente', ayuda: 'Busca por número de expediente.', inputLabel: 'Número de expediente' },
-  { value: 'CANCELACIONES', label: 'Cancelaciones', ayuda: 'Embargos cancelados (deuda saldada o finalizados).' },
-  { value: 'DEVOLUCIONES', label: 'Devoluciones', ayuda: 'Retenciones con importes devueltos al agente.' },
-  { value: 'NO_IMPUTACIONES', label: 'No imputaciones', ayuda: 'Embargos en espera que todavía no registran retenciones.' },
-  { value: 'ALTAS', label: 'Consultas de altas', ayuda: 'Embargos dados de alta en los últimos 30 días.' },
-  { value: 'BAJAS_COBRANDO', label: 'Bajas cobrando', ayuda: 'Embargos en baja que todavía conservan saldo pendiente.' },
-  { value: 'BAJAS_REN_DEC', label: 'Bajas x Ren./Dec.', ayuda: 'Embargos dados de baja por renuncia o decreto.' },
-  { value: 'ACTIVOS_SIN_RETENCION', label: 'Activos sin retención', ayuda: 'Embargos activos sin ninguna retención imputada.' },
-  { value: 'PRIMER_MES', label: 'Primer mes de retención', ayuda: 'Primer período retenido de cada embargo.' },
+  { value: 'TODAS', label: 'Todas', ayuda: 'Todos los embargos de los DNI ingresados.' },
+  { value: 'AGENTE', label: 'Por agente', ayuda: 'Embargos de los agentes según los DNI ingresados.' },
+  { value: 'PROGRAMA', label: 'Por programa', ayuda: 'Embargos de los DNI ingresados, filtrados por código o nombre del programa.', inputLabel: 'Programa' },
+  { value: 'EXPEDIENTE', label: 'Por expediente', ayuda: 'Embargos de los DNI ingresados, filtrados por número de expediente.', inputLabel: 'Número de expediente' },
+  { value: 'CANCELACIONES', label: 'Cancelaciones', ayuda: 'Embargos cancelados (deuda saldada o finalizados) de los DNI ingresados.' },
+  { value: 'DEVOLUCIONES', label: 'Devoluciones', ayuda: 'Retenciones con importes devueltos al agente, de los DNI ingresados.' },
+  { value: 'NO_IMPUTACIONES', label: 'No imputaciones', ayuda: 'Embargos en espera que todavía no registran retenciones, de los DNI ingresados.' },
+  { value: 'ALTAS', label: 'Consultas de altas', ayuda: 'Embargos dados de alta en los últimos 30 días, de los DNI ingresados.' },
+  { value: 'BAJAS_COBRANDO', label: 'Bajas cobrando', ayuda: 'Embargos en baja que todavía conservan saldo pendiente, de los DNI ingresados.' },
+  { value: 'BAJAS_REN_DEC', label: 'Bajas x Ren./Dec.', ayuda: 'Embargos dados de baja por renuncia o decreto, de los DNI ingresados.', inputLabel: 'Expediente, autos o motivo (opcional)' },
+  { value: 'ACTIVOS_SIN_RETENCION', label: 'Activos sin retención', ayuda: 'Embargos activos sin ninguna retención imputada, de los DNI ingresados.' },
+  { value: 'PRIMER_MES', label: 'Primer mes de retención', ayuda: 'Primer período retenido de cada embargo, de los DNI ingresados.' },
 ]
 
 const MESES = [

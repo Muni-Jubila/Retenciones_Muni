@@ -216,7 +216,10 @@ model EMBARGO {
   ID_AGENTE                      Int
   ESTADO                         String                         @default("ESPERA") @db.VarChar(20)
   AUTOS                          String?                        @db.VarChar(500)
+  /// N° de expediente judicial (SAC), el dato que identifica el oficio.
   EXPEDIENTE                     String?                        @db.VarChar(100)
+  /// Correlativo interno de retenciones; se muestra como 000.000/000.
+  NRO_EXPEDIENTE_RETENCIONES     Int                            @unique @default(autoincrement())
   FECHA_EXPEDIENTE               DateTime?                      @db.Date
   CUENTA                         String?                        @db.VarChar(100)
   SUCURSAL                       String?                        @db.VarChar(50)
