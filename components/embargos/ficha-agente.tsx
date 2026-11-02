@@ -713,7 +713,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
               { label: 'Activos', value: String(resumen.activos), icon: BadgeCheck, tone: 'text-emerald-700 bg-emerald-50' },
               { label: 'En espera', value: String(resumen.espera), icon: CalendarClock, tone: 'text-amber-700 bg-amber-50' },
               { label: 'Deuda total', value: formatMoney(resumen.deuda), icon: Wallet, tone: 'text-slate-700 bg-slate-100' },
-              { label: 'Retenido', value: formatMoney(resumen.retenido), icon: CheckCircle2, tone: 'text-emerald-700 bg-emerald-50' },
+              { label: 'Total retenido', value: formatMoney(resumen.retenido), icon: CheckCircle2, tone: 'text-emerald-700 bg-emerald-50' },
               { label: 'Saldo pendiente', value: formatMoney(resumen.saldo), icon: Hash, tone: 'text-rose-700 bg-rose-50' },
             ].map((item) => (
               <div key={item.label} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
@@ -803,7 +803,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                       <th className="px-3 py-2 text-left">Exp. Retenciones</th>
                       <th className="px-3 py-2 text-left">Fecha</th>
                       <th className="px-3 py-2 text-right">Deuda</th>
-                      <th className="px-3 py-2 text-right">Retenido</th>
+                      <th className="px-3 py-2 text-right">Total retenido</th>
                       <th className="px-3 py-2 text-right">Saldo</th>
                       <th className="px-3 py-2 text-left">Estado</th>
                     </tr>
