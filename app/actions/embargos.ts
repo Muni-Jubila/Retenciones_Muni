@@ -13,6 +13,7 @@ import {
   formatExpedienteRetenciones,
   periodoActual,
   periodoLabel,
+  parseExpedienteRetenciones,
   parseMoneyInput,
   roundMoney,
   toCsv,
@@ -138,15 +139,17 @@ function validarEmbargo(input: EmbargoInput): { error?: string; field?: string }
   if (!Number.isInteger(input.idAgente) || input.idAgente <= 0) {
     return { error: 'Seleccione un agente válido.', field: 'idAgente' }
   }
-  if (!validarEstado(input.estado)) {
-    return { error: 'El estado del embargo no es válido.', field: 'estado' }
-  }
   if (input.autos.trim().length > 500) return { error: 'Los autos superan los 500 caracteres.', field: 'autos' }
   if (input.expediente.trim().length > 100) return { error: 'El expediente supera los 100 caracteres.', field: 'expediente' }
-  if (input.cuenta.trim().length > 100) return { error: 'La cuenta supera los 100 caracteres.', field: 'cuenta' }
+  if (input.cuenta.trim() && !/^\d{1,8}$/.test(input.cuenta.trim())) {
+    return { error: 'La Cuenta N° debe contener solo números, con un máximo de 8 dígitos.', field: 'cuenta' }
+  }
+  if (input.expedienteRetenciones.trim() && parseExpedienteRetenciones(input.expedienteRetenciones) === null) {
+    return { error: 'El Expediente Retenciones N° debe tener hasta 9 dígitos.', field: 'expedienteRetenciones' }
+  }
   if (input.sucursal.trim().length > 50) return { error: 'La sucursal supera los 50 caracteres.', field: 'sucursal' }
   if (input.juez.trim().length > 255) return { error: 'El juzgado supera los 255 caracteres.', field: 'juez' }
-  if (input.secretaria.trim().length > 100) return { error: 'La secretaría supera los 100 caracteres.', field: 'secretaria' }
+  if (input.secretaria.trim().length > 100) return { error: 'El juez supera los 100 caracteres.', field: 'secretaria' }
   if (input.observaciones.trim().length > 1000) return { error: 'Las observaciones superan los 1000 caracteres.', field: 'observaciones' }
 
   const fechaError = getDateValidationError(input.fechaExpediente, true)
@@ -166,7 +169,6 @@ function validarEmbargo(input: EmbargoInput): { error?: string; field?: string }
 
 function buildEmbargoData(input: EmbargoInput) {
   return {
-    ESTADO: validarEstado(input.estado) ?? 'ESPERA',
     AUTOS: input.autos.trim() || null,
     EXPEDIENTE: input.expediente.trim() || null,
     FECHA_EXPEDIENTE: input.fechaExpediente.trim() ? parseDate(input.fechaExpediente) : null,
@@ -183,6 +185,61 @@ function buildEmbargoData(input: EmbargoInput) {
     MARCA_ESPECIAL: input.marcaEspecial.trim() || null,
     OBSERVACIONES: input.observaciones.trim() || null,
   }
+}
+
+function esEstadoCerrado(estado: string): boolean {
+  return estado === 'BAJA' || estado === 'CANCELADO'
+}
+
+/**
+ * El primer embargo de un agente queda ACTIVO; si ya tiene otro vigente o en
+ * espera, el nuevo se carga en ESPERA. Los estados no se eligen desde el alta.
+ */
+async function estadoInicialEmbargo(idAgente: number): Promise<EstadoEmbargo> {
+  const anterior = await prisma.eMBARGO.findFirst({
+    where: {
+      ID_AGENTE: idAgente,
+      BIT_BORRADO: false,
+      ESTADO: { in: ['ACTIVO', 'ESPERA'] },
+    },
+    select: { ID_EMBARGO: true },
+  })
+  return anterior ? 'ESPERA' : 'ACTIVO'
+}
+
+/**
+ * Activa el siguiente embargo en espera del agente cuando no queda ninguno
+ * activo. Devuelve true si activó un registro.
+ */
+async function activarSiguienteEmbargoEnEspera(idAgente: number, excluirId?: number): Promise<boolean> {
+  const activo = await prisma.eMBARGO.findFirst({
+    where: {
+      ID_AGENTE: idAgente,
+      BIT_BORRADO: false,
+      ESTADO: 'ACTIVO',
+      ...(excluirId ? { ID_EMBARGO: { not: excluirId } } : {}),
+    },
+    select: { ID_EMBARGO: true },
+  })
+  if (activo) return false
+
+  const siguiente = await prisma.eMBARGO.findFirst({
+    where: {
+      ID_AGENTE: idAgente,
+      BIT_BORRADO: false,
+      ESTADO: 'ESPERA',
+      ...(excluirId ? { ID_EMBARGO: { not: excluirId } } : {}),
+    },
+    orderBy: [{ FECHA_ALTA: 'asc' }, { ID_EMBARGO: 'asc' }],
+    select: { ID_EMBARGO: true },
+  })
+  if (!siguiente) return false
+
+  await prisma.eMBARGO.update({
+    where: { ID_EMBARGO: siguiente.ID_EMBARGO },
+    data: { ESTADO: 'ACTIVO', FECHA_BAJA: null, MOTIVO_BAJA: null },
+  })
+  return true
 }
 
 /**
@@ -211,17 +268,32 @@ async function recalcularSaldos(idEmbargo: number): Promise<number | null> {
     await prisma.eMBARGO.update({
       where: { ID_EMBARGO: idEmbargo },
       data: {
-        ESTADO: 'CANCELADO',
+        ESTADO: 'BAJA',
         FECHA_BAJA: new Date(),
         MOTIVO_BAJA: 'Deuda cancelada',
       },
     })
-  } else if (saldo > 0 && embargo.ESTADO === 'CANCELADO' && embargo.MOTIVO_BAJA === 'Deuda cancelada') {
+    await activarSiguienteEmbargoEnEspera(embargo.ID_AGENTE, idEmbargo)
+  } else if (
+    saldo > 0 &&
+    embargo.ESTADO === 'BAJA' &&
+    embargo.MOTIVO_BAJA === 'Deuda cancelada'
+  ) {
     // Si se eliminó o corrigió una retención, la deuda vuelve a estar pendiente.
+    // Si otro embargo ya está activo, este vuelve a espera para no duplicar activos.
+    const otroActivo = await prisma.eMBARGO.findFirst({
+      where: {
+        ID_AGENTE: embargo.ID_AGENTE,
+        BIT_BORRADO: false,
+        ESTADO: 'ACTIVO',
+        ID_EMBARGO: { not: idEmbargo },
+      },
+      select: { ID_EMBARGO: true },
+    })
     await prisma.eMBARGO.update({
       where: { ID_EMBARGO: idEmbargo },
       data: {
-        ESTADO: 'ACTIVO',
+        ESTADO: otroActivo ? 'ESPERA' : 'ACTIVO',
         FECHA_BAJA: null,
         MOTIVO_BAJA: null,
       },
@@ -299,15 +371,38 @@ export async function crearEmbargo(input: EmbargoInput): Promise<EmbargoActionRe
       }
     }
 
-    const estadoNuevo = validarEstado(input.estado) ?? 'ESPERA'
-    const cierraAlCrear = estadoNuevo === 'BAJA' || estadoNuevo === 'CANCELADO'
+    const nroRetenciones = parseExpedienteRetenciones(input.expedienteRetenciones)
+    if (input.expedienteRetenciones.trim() && nroRetenciones === null) {
+      return {
+        ok: false,
+        error: 'El Expediente Retenciones N° debe tener hasta 9 dígitos.',
+        field: 'expedienteRetenciones',
+      }
+    }
+    if (nroRetenciones) {
+      const duplicadoNro = await prisma.eMBARGO.findFirst({
+        where: { NRO_EXPEDIENTE_RETENCIONES: nroRetenciones },
+        select: { ID_EMBARGO: true },
+      })
+      if (duplicadoNro) {
+        return {
+          ok: false,
+          error: 'Ya existe un embargo con ese N° de expediente de retenciones.',
+          field: 'expedienteRetenciones',
+        }
+      }
+    }
+
+    const estadoNuevo = await estadoInicialEmbargo(input.idAgente)
     const creado = await prisma.eMBARGO.create({
       data: {
         ID_AGENTE: input.idAgente,
         ...buildEmbargoData(input),
+        ESTADO: estadoNuevo,
+        ...(nroRetenciones ? { NRO_EXPEDIENTE_RETENCIONES: nroRetenciones } : {}),
         FECHA_ALTA: new Date(),
-        FECHA_BAJA: cierraAlCrear ? new Date() : null,
-        MOTIVO_BAJA: cierraAlCrear ? `Creado como ${estadoNuevo.toLowerCase()}` : null,
+        FECHA_BAJA: null,
+        MOTIVO_BAJA: null,
         USUARIO_CREACION: session.userId,
       },
       include: includeEmbargo,
@@ -331,7 +426,13 @@ export async function actualizarEmbargo(id: number, input: EmbargoInput): Promis
 
     const actual = await prisma.eMBARGO.findFirst({
       where: { ID_EMBARGO: id, BIT_BORRADO: false },
-      select: { ID_EMBARGO: true, ID_AGENTE: true, DEUDA: true, ESTADO: true },
+      select: {
+        ID_EMBARGO: true,
+        ID_AGENTE: true,
+        DEUDA: true,
+        ESTADO: true,
+        NRO_EXPEDIENTE_RETENCIONES: true,
+      },
     })
     if (!actual) return { ok: false, error: 'El embargo no existe o fue eliminado.' }
 
@@ -355,22 +456,45 @@ export async function actualizarEmbargo(id: number, input: EmbargoInput): Promis
       }
     }
 
-    const estadoAnterior = actual.ESTADO
-    const nuevoEstado = validarEstado(input.estado) ?? 'ESPERA'
-    const data: Prisma.EMBARGOUpdateInput = {
+    const estadoAnterior = actual.ESTADO as EstadoEmbargo
+    const estadoSolicitado = validarEstado(input.estado)
+    // Desde la edición sólo se permite cancelar. Activo, en espera y baja son
+    // estados automáticos del circuito.
+    const cancelaAhora = estadoSolicitado === 'CANCELADO' && !esEstadoCerrado(estadoAnterior)
+
+    const data: Prisma.EMBARGOUncheckedUpdateInput = {
       ...buildEmbargoData(input),
       FECHA_ULTIMA_MODIFICACION: new Date(),
       USUARIO_ULTIMA_MODIFICACION: session.userId,
     }
 
-    if (nuevoEstado === 'BAJA' || nuevoEstado === 'CANCELADO') {
+    if (cancelaAhora) {
+      data.ESTADO = 'CANCELADO'
       data.FECHA_BAJA = new Date()
-      data.MOTIVO_BAJA = `Cambio de estado a ${nuevoEstado.toLowerCase()}`
-    } else {
-      data.FECHA_BAJA = null
-      if (estadoAnterior === 'BAJA' || estadoAnterior === 'CANCELADO') {
-        data.MOTIVO_BAJA = null
+      data.MOTIVO_BAJA = 'Cambio de estado a cancelado'
+    }
+
+    const nroRetenciones = parseExpedienteRetenciones(input.expedienteRetenciones)
+    if (input.expedienteRetenciones.trim() && nroRetenciones === null) {
+      return {
+        ok: false,
+        error: 'El Expediente Retenciones N° debe tener hasta 9 dígitos.',
+        field: 'expedienteRetenciones',
       }
+    }
+    if (nroRetenciones && nroRetenciones !== actual.NRO_EXPEDIENTE_RETENCIONES) {
+      const duplicadoNro = await prisma.eMBARGO.findFirst({
+        where: { NRO_EXPEDIENTE_RETENCIONES: nroRetenciones, ID_EMBARGO: { not: id } },
+        select: { ID_EMBARGO: true },
+      })
+      if (duplicadoNro) {
+        return {
+          ok: false,
+          error: 'Ya existe un embargo con ese N° de expediente de retenciones.',
+          field: 'expedienteRetenciones',
+        }
+      }
+      data.NRO_EXPEDIENTE_RETENCIONES = nroRetenciones
     }
 
     const actualizado = await prisma.eMBARGO.update({
@@ -378,6 +502,10 @@ export async function actualizarEmbargo(id: number, input: EmbargoInput): Promis
       data,
       include: includeEmbargo,
     })
+
+    if (cancelaAhora) {
+      await activarSiguienteEmbargoEnEspera(actual.ID_AGENTE, id)
+    }
 
     // Si cambió la deuda, los saldos históricos deben recalcularse.
     if (Number(actual.DEUDA) !== Number(actualizado.DEUDA)) {
@@ -406,26 +534,35 @@ export async function cambiarEstadoEmbargo(
     const session = await requireAuthenticatedSession()
     if (!Number.isInteger(id) || id <= 0) return { ok: false, error: 'Embargo inválido.' }
     const nuevoEstado = validarEstado(estado)
-    if (!nuevoEstado) return { ok: false, error: 'Estado de embargo inválido.' }
+    if (nuevoEstado !== 'CANCELADO') {
+      return {
+        ok: false,
+        error: 'Sólo se puede cancelar manualmente un embargo. Los demás estados se asignan automáticamente.',
+      }
+    }
 
     const actual = await prisma.eMBARGO.findFirst({
       where: { ID_EMBARGO: id, BIT_BORRADO: false },
-      select: { ID_EMBARGO: true },
+      select: { ID_EMBARGO: true, ID_AGENTE: true, ESTADO: true },
     })
     if (!actual) return { ok: false, error: 'El embargo no existe o fue eliminado.' }
+    if (esEstadoCerrado(actual.ESTADO)) {
+      return { ok: false, error: 'El embargo ya está cerrado.' }
+    }
 
-    const cierra = nuevoEstado === 'BAJA' || nuevoEstado === 'CANCELADO'
     const actualizado = await prisma.eMBARGO.update({
       where: { ID_EMBARGO: id },
       data: {
-        ESTADO: nuevoEstado,
-        FECHA_BAJA: cierra ? new Date() : null,
-        MOTIVO_BAJA: cierra ? motivo?.trim() || `Cambio de estado a ${nuevoEstado.toLowerCase()}` : null,
+        ESTADO: 'CANCELADO',
+        FECHA_BAJA: new Date(),
+        MOTIVO_BAJA: motivo?.trim() || 'Cambio de estado a cancelado',
         FECHA_ULTIMA_MODIFICACION: new Date(),
         USUARIO_ULTIMA_MODIFICACION: session.userId,
       },
       include: includeEmbargo,
     })
+
+    await activarSiguienteEmbargoEnEspera(actual.ID_AGENTE, id)
 
     return { ok: true, embargo: mapEmbargo(actualizado) }
   } catch (error) {
@@ -442,7 +579,7 @@ export async function eliminarEmbargo(id: number): Promise<{ ok: boolean; error?
 
     const actual = await prisma.eMBARGO.findFirst({
       where: { ID_EMBARGO: id, BIT_BORRADO: false },
-      select: { ID_EMBARGO: true },
+      select: { ID_EMBARGO: true, ID_AGENTE: true, ESTADO: true },
     })
     if (!actual) return { ok: false, error: 'El embargo no existe o ya fue eliminado.' }
 
@@ -455,6 +592,11 @@ export async function eliminarEmbargo(id: number): Promise<{ ok: boolean; error?
         USUARIO_ULTIMA_MODIFICACION: session.userId,
       },
     })
+
+    if (actual.ESTADO === 'ACTIVO') {
+      await activarSiguienteEmbargoEnEspera(actual.ID_AGENTE, id)
+    }
+
     return { ok: true }
   } catch (error) {
     logServerError('[eliminarEmbargo] Error:', error)
@@ -796,17 +938,18 @@ export interface ActualizacionMasivaResult {
 export async function actualizarEsperas(): Promise<ActualizacionMasivaResult> {
   if (isEmbargosMock()) return mock.actualizarEsperas() as any
   try {
-    const session = await requireAuthenticatedSession()
+    await requireAuthenticatedSession()
     const embargos = await prisma.eMBARGO.findMany({
       where: { BIT_BORRADO: false, ESTADO: { in: ['ESPERA', 'ACTIVO'] } },
       include: { RETENCION_EMBARGO: { orderBy: { PERIODO: 'asc' } } },
     })
 
-    let activados = 0
-    let cancelados = 0
     let ajustados = 0
+    const estadosAntes = new Map(embargos.map((embargo) => [embargo.ID_EMBARGO, embargo.ESTADO]))
+    const agentes = new Set<number>()
 
     for (const embargo of embargos) {
+      agentes.add(embargo.ID_AGENTE)
       const saldo = roundMoney(
         embargo.RETENCION_EMBARGO.reduce(
           (acc, item) => acc - Number(item.RETENCION_MENSUAL) + Number(item.DEVOLUCION),
@@ -816,34 +959,25 @@ export async function actualizarEsperas(): Promise<ActualizacionMasivaResult> {
       const ultimaRetencion = embargo.RETENCION_EMBARGO[embargo.RETENCION_EMBARGO.length - 1]
       if (ultimaRetencion && Number(ultimaRetencion.SALDO) !== saldo) ajustados += 1
 
-      if (saldo <= 0) {
-        await prisma.eMBARGO.update({
-          where: { ID_EMBARGO: embargo.ID_EMBARGO },
-          data: {
-            ESTADO: 'CANCELADO',
-            FECHA_BAJA: new Date(),
-            MOTIVO_BAJA: 'Deuda cancelada',
-            FECHA_ULTIMA_MODIFICACION: new Date(),
-            USUARIO_ULTIMA_MODIFICACION: session.userId,
-          },
-        })
-        cancelados += 1
-      } else if (embargo.ESTADO === 'ESPERA' && embargo.RETENCION_EMBARGO.length > 0) {
-        await prisma.eMBARGO.update({
-          where: { ID_EMBARGO: embargo.ID_EMBARGO },
-          data: {
-            ESTADO: 'ACTIVO',
-            FECHA_BAJA: null,
-            MOTIVO_BAJA: null,
-            FECHA_ULTIMA_MODIFICACION: new Date(),
-            USUARIO_ULTIMA_MODIFICACION: session.userId,
-          },
-        })
-        activados += 1
-      }
-
+      // recalcularSaldos da de baja las deudas saldadas y activa la siguiente espera.
       await recalcularSaldos(embargo.ID_EMBARGO)
     }
+
+    // Si un agente quedó sin embargo activo pero tiene esperas, activar la primera.
+    for (const idAgente of agentes) {
+      await activarSiguienteEmbargoEnEspera(idAgente)
+    }
+
+    const finales = await prisma.eMBARGO.findMany({
+      where: { ID_EMBARGO: { in: [...estadosAntes.keys()] } },
+      select: { ID_EMBARGO: true, ESTADO: true },
+    })
+    const activados = finales.filter(
+      (item) => estadosAntes.get(item.ID_EMBARGO) === 'ESPERA' && item.ESTADO === 'ACTIVO',
+    ).length
+    const cancelados = finales.filter(
+      (item) => estadosAntes.get(item.ID_EMBARGO) !== 'BAJA' && item.ESTADO === 'BAJA',
+    ).length
 
     return { ok: true, procesados: embargos.length, activados, cancelados, ajustados }
   } catch (error) {

@@ -60,6 +60,20 @@ export function formatExpedienteRetenciones(numero: number | null | undefined): 
   return `${padded.slice(0, 3)}.${padded.slice(3, 6)}/${padded.slice(6)}`
 }
 
+/**
+ * Convierte el N° de expediente de retenciones escrito por el operador
+ * (por ejemplo "000.123/456") al entero correlativo que guarda la base.
+ * Devuelve null si no hay dígitos o si supera los 9 dígitos permitidos.
+ */
+export function parseExpedienteRetenciones(value: string | number | null | undefined): number | null {
+  if (value == null) return null
+  const digits = String(value).replace(/\D/g, '')
+  if (!digits || digits.length > 9) return null
+  const parsed = Number(digits)
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) return null
+  return parsed
+}
+
 export interface Embargo {
   id: number
   idAgente: number
@@ -116,6 +130,8 @@ export interface EmbargoInput {
   estado: string
   autos: string
   expediente: string
+  /** N° interno de retenciones editable; se guarda como entero. */
+  expedienteRetenciones: string
   fechaExpediente: string
   cuenta: string
   sucursal: string

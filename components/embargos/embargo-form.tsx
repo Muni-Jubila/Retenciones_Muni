@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { FilePlus2, FileText, Save, X } from 'lucide-react'
-import { ESTADOS_EMBARGO, type Embargo, type EmbargoInput } from '@/lib/embargos'
+import { ESTADOS_EMBARGO, parseExpedienteRetenciones, type Embargo, type EmbargoInput } from '@/lib/embargos'
 import type { Empleado } from '@/lib/empleados'
 import { formatDate } from '@/lib/format-utils'
 import { Banner, MoneyField, SelectField, TextField } from '@/components/embargos/ui'
@@ -27,17 +27,18 @@ function fromEmbargo(
   prefill?: Partial<EmbargoInput> | null,
 ): EmbargoInput {
   return {
-    estado: initial?.estado ?? 'ESPERA',
+    estado: initial?.estado ?? '',
     autos: initial?.autos ?? '',
     expediente: initial?.expediente ?? '',
+    expedienteRetenciones: initial?.expedienteRetenciones ?? '',
     fechaExpediente: initial?.fechaExpediente ?? '',
-    cuenta: initial?.cuenta ?? '',
+    cuenta: (initial?.cuenta ?? '').replace(/\D/g, '').slice(0, 8),
     sucursal: initial?.sucursal ?? '',
     juez: initial?.juez ?? '',
     instancia: initial?.instancia ?? '',
     nomenclatura: initial?.nomenclatura ?? '',
     tipoProceso: initial?.tipoProceso ?? '',
-    secretaria: initial?.secretaria ?? agente.secretaria,
+    secretaria: initial?.secretaria ?? '',
     deuda: initial?.deuda ? String(initial.deuda).replace('.', ',') : '',
     importeMensual: initial?.importeMensual ? String(initial.importeMensual).replace('.', ',') : '',
     porcentaje: initial?.porcentaje ? String(initial.porcentaje).replace('.', ',') : '',
@@ -77,6 +78,14 @@ export default function EmbargoForm({
       setLocalError('La fecha del expediente debe tener el formato dd/mm/aaaa.')
       return
     }
+    if (form.cuenta.trim() && !/^\d{1,8}$/.test(form.cuenta.trim())) {
+      setLocalError('La Cuenta N° debe contener solo números, con un máximo de 8 dígitos.')
+      return
+    }
+    if (form.expedienteRetenciones.trim() && parseExpedienteRetenciones(form.expedienteRetenciones) === null) {
+      setLocalError('El Expediente Retenciones N° debe tener hasta 9 dígitos.')
+      return
+    }
     onSubmit(form)
   }
 
@@ -108,7 +117,7 @@ export default function EmbargoForm({
             </a>
           )}
           <span className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide">
-            Estado: {ESTADOS_EMBARGO.find((item) => item.value === form.estado)?.label}
+            Estado: {initial ? ESTADOS_EMBARGO.find((item) => item.value === form.estado)?.label ?? '—' : 'Automático'}
           </span>
         </div>
       </div>
@@ -163,11 +172,12 @@ export default function EmbargoForm({
             />
             <TextField
               label="Expediente Retenciones N°"
-              value={initial?.expedienteRetenciones ?? ''}
-              onChange={() => {}}
-              readOnly
+              value={form.expedienteRetenciones}
+              onChange={(value) => update('expedienteRetenciones', value.replace(/[^\d./]/g, '').slice(0, 11))}
               placeholder={initial ? '—' : 'Se asigna automáticamente'}
-              hint={initial ? 'N° interno de retenciones.' : 'Correlativo automático al guardar (000.000/000).'}
+              maxLength={11}
+              hint={initial ? 'Podés modificar el N° interno (000.000/000).' : 'Correlativo automático si lo dejás vacío (000.000/000).'}
+              error={field === 'expedienteRetenciones' ? error : null}
             />
             <TextField
               label="Fecha expediente"
@@ -187,9 +197,11 @@ export default function EmbargoForm({
             <TextField
               label="Cuenta N°"
               value={form.cuenta}
-              onChange={(value) => update('cuenta', value)}
-              placeholder="153678/4"
-              maxLength={100}
+              onChange={(value) => update('cuenta', value.replace(/\D/g, '').slice(0, 8))}
+              placeholder="15367884"
+              maxLength={8}
+              hint="Solo números, hasta 8 dígitos."
+              error={field === 'cuenta' ? error : null}
             />
             <TextField
               label="Juez de"
@@ -198,14 +210,11 @@ export default function EmbargoForm({
               placeholder="Juzgado / organismo"
               maxLength={255}
             />
-            <TextField label="Inst. y" value={form.instancia} onChange={(value) => update('instancia', value)} placeholder="Instancia" maxLength={50} />
-            <TextField label="Nom." value={form.nomenclatura} onChange={(value) => update('nomenclatura', value)} placeholder="Nomenclatura" maxLength={255} />
-            <TextField label="T." value={form.tipoProceso} onChange={(value) => update('tipoProceso', value)} placeholder="P.U.E." maxLength={20} />
             <TextField
-              label="Secretaría judicial"
+              label="Juez"
               value={form.secretaria}
               onChange={(value) => update('secretaria', value)}
-              placeholder="Número / detalle"
+              placeholder="Nombre del juez"
               maxLength={100}
             />
           </div>
@@ -223,20 +232,39 @@ export default function EmbargoForm({
               hint="Importe total del embargo."
               error={field === 'deuda' ? error : null}
             />
-            <TextField
-              label="Marca especial"
-              value={form.marcaEspecial}
-              onChange={(value) => update('marcaEspecial', value)}
-              placeholder="Opcional"
-              maxLength={10}
-            />
-            <SelectField
-              label="Estado del registro"
-              value={form.estado}
-              onChange={(value) => update('estado', value)}
-              options={ESTADOS_EMBARGO.map((item) => ({ value: item.value, label: `${item.letra} · ${item.label}` }))}
-              hint="E = espera · A = activo · B = baja · C = cancelado"
-            />
+            {initial && initial.estado !== 'BAJA' && initial.estado !== 'CANCELADO' ? (
+              <SelectField
+                label="Estado"
+                value={form.estado === 'CANCELADO' ? 'CANCELADO' : ''}
+                onChange={(value) => update('estado', value || initial.estado)}
+                options={[
+                  {
+                    value: '',
+                    label: `Mantener ${ESTADOS_EMBARGO.find((item) => item.value === initial.estado)?.label ?? initial.estado}`,
+                  },
+                  { value: 'CANCELADO', label: 'C · Cancelado' },
+                ]}
+                hint="Solo podés cancelar el embargo. Activo, en espera y baja se asignan automáticamente."
+              />
+            ) : initial ? (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Estado</span>
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-600">
+                  {ESTADOS_EMBARGO.find((item) => item.value === initial.estado)?.label ?? initial.estado}
+                </div>
+                <span className="text-[10px] text-slate-400">Este embargo ya está cerrado.</span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Estado</span>
+                <div className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-sm font-semibold text-[#1e3a8a]">
+                  Se asigna automáticamente
+                </div>
+                <span className="text-[10px] text-slate-400">
+                  Activo si es el primer embargo del agente; en espera si ya tiene otro anterior.
+                </span>
+              </div>
+            )}
             <label className="col-span-2 flex flex-col gap-1 md:col-span-4">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Observaciones</span>
               <textarea

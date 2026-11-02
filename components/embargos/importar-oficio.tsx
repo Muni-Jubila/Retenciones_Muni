@@ -346,7 +346,7 @@ export default function ImportarOficio({ onImport, onBuscarAgente, onQuitar }: I
                   <DatoOficio label="Fecha" value={datos.fechaExpediente} mono missing={!datos.fechaExpediente} />
                   <DatoOficio label="N° de oficio (referencia)" value={datos.numeroOficio} mono />
                   <DatoOficio label="Juzgado" value={datos.juez} full missing={!datos.juez} />
-                  <DatoOficio label="Secretaría" value={datos.secretaria} />
+                  <DatoOficio label="Juez" value={datos.juezNombre} full missing={!datos.juezNombre} />
                   <DatoOficio label="Autos" value={datos.autos} full missing={!datos.autos} />
                 </div>
               </div>

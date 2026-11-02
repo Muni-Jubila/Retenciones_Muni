@@ -2,6 +2,7 @@ import type { Empleado } from '@/lib/empleados'
 import {
   formatExpedienteRetenciones,
   formatMoney,
+  parseExpedienteRetenciones,
   parseMoneyInput,
   roundMoney,
   periodoActual,
@@ -65,7 +66,9 @@ const MOCK_AGENTES: Empleado[] = [
 ]
 
 let nextEmbargoId = 100
-let nextRetencionId = 1000
+// Los ejemplos usan IDs de retención 1001..1008; arrancamos por encima para
+// evitar colisiones al crear retenciones nuevas en modo mock.
+let nextRetencionId = 2000
 
 interface MockRetencion {
   id: number
@@ -292,6 +295,34 @@ function mapEmbargo(m: MockEmbargo): Embargo {
   }
 }
 
+function esEstadoCerradoMock(estado: string): boolean {
+  return estado === 'BAJA' || estado === 'CANCELADO'
+}
+
+function estadoInicialEmbargoMock(idAgente: number): EstadoEmbargo {
+  const anterior = mockEmbargos.some(
+    (m) => m.idAgente === idAgente && (m.estado === 'ACTIVO' || m.estado === 'ESPERA'),
+  )
+  return anterior ? 'ESPERA' : 'ACTIVO'
+}
+
+function activarSiguienteEsperaMock(idAgente: number, excluirId?: number): boolean {
+  const activo = mockEmbargos.find(
+    (m) => m.idAgente === idAgente && m.estado === 'ACTIVO' && m.id !== excluirId,
+  )
+  if (activo) return false
+
+  const siguiente = mockEmbargos
+    .filter((m) => m.idAgente === idAgente && m.estado === 'ESPERA' && m.id !== excluirId)
+    .sort((a, b) => a.fechaAlta.localeCompare(b.fechaAlta) || a.id - b.id)[0]
+  if (!siguiente) return false
+
+  siguiente.estado = 'ACTIVO'
+  siguiente.fechaBaja = ''
+  siguiente.motivoBaja = ''
+  return true
+}
+
 function recalcularSaldosMock(idEmbargo: number): number | null {
   const m = mockEmbargos.find((e) => e.id === idEmbargo)
   if (!m) return null
@@ -301,11 +332,16 @@ function recalcularSaldosMock(idEmbargo: number): number | null {
     r.saldo = saldo
   }
   if (saldo <= 0 && (m.estado === 'ACTIVO' || m.estado === 'ESPERA')) {
-    m.estado = 'CANCELADO'
+    m.estado = 'BAJA'
     m.fechaBaja = hoy
     m.motivoBaja = 'Deuda cancelada'
-  } else if (saldo > 0 && m.estado === 'CANCELADO' && m.motivoBaja === 'Deuda cancelada') {
-    m.estado = 'ACTIVO'
+    activarSiguienteEsperaMock(m.idAgente, m.id)
+  } else if (saldo > 0 && m.estado === 'BAJA' && m.motivoBaja === 'Deuda cancelada') {
+    // Si se corrigió o eliminó una retención, la deuda vuelve a estar pendiente.
+    const otroActivo = mockEmbargos.some(
+      (e) => e.idAgente === m.idAgente && e.id !== m.id && e.estado === 'ACTIVO',
+    )
+    m.estado = otroActivo ? 'ESPERA' : 'ACTIVO'
     m.fechaBaja = ''
     m.motivoBaja = ''
   }
@@ -335,14 +371,30 @@ export async function listarEmbargosDeAgente(idAgente: number, empleado?: Emplea
 export async function crearEmbargo(input: EmbargoInput): Promise<{ ok: boolean; error?: string; field?: string; embargo?: Embargo }> {
   const agente = agenteDe(input.idAgente)
   if (!agente) return { ok: false, error: 'El agente no existe.' }
+
+  const expediente = input.expediente.trim()
+  if (expediente && mockEmbargos.some((m) => m.idAgente === input.idAgente && m.expediente === expediente)) {
+    return { ok: false, error: 'Ya existe un embargo con ese expediente para este agente.', field: 'expediente' }
+  }
+
+  const nroRetenciones = parseExpedienteRetenciones(input.expedienteRetenciones)
+  if (input.expedienteRetenciones.trim() && nroRetenciones === null) {
+    return { ok: false, error: 'El Expediente Retenciones N° debe tener hasta 9 dígitos.', field: 'expedienteRetenciones' }
+  }
+  if (nroRetenciones && mockEmbargos.some((m) => m.nroExpedienteRetenciones === nroRetenciones)) {
+    return { ok: false, error: 'Ya existe un embargo con ese N° de expediente de retenciones.', field: 'expedienteRetenciones' }
+  }
+
+  const id = ++nextEmbargoId
   const nuevo: MockEmbargo = {
-    id: ++nextEmbargoId,
+    id,
     idAgente: input.idAgente,
     dni: '',
     agente: '',
-    estado: (input.estado as EstadoEmbargo) || 'ESPERA',
+    estado: estadoInicialEmbargoMock(input.idAgente),
     autos: input.autos.trim(),
-    expediente: input.expediente.trim(),
+    expediente,
+    nroExpedienteRetenciones: nroRetenciones ?? id,
     fechaExpediente: input.fechaExpediente.trim(),
     cuenta: input.cuenta.trim(),
     sucursal: input.sucursal.trim(),
@@ -364,10 +416,6 @@ export async function crearEmbargo(input: EmbargoInput): Promise<{ ok: boolean; 
     cargo: agente.cargo,
     retenciones: [],
   }
-  if (nuevo.estado === 'BAJA' || nuevo.estado === 'CANCELADO') {
-    nuevo.fechaBaja = hoy
-    nuevo.motivoBaja = `Creado como ${nuevo.estado.toLowerCase()}`
-  }
   mockEmbargos.push(nuevo)
   return { ok: true, embargo: mapEmbargo(nuevo) }
 }
@@ -375,10 +423,26 @@ export async function crearEmbargo(input: EmbargoInput): Promise<{ ok: boolean; 
 export async function actualizarEmbargo(id: number, input: EmbargoInput): Promise<{ ok: boolean; error?: string; field?: string; embargo?: Embargo }> {
   const m = mockEmbargos.find((e) => e.id === id)
   if (!m) return { ok: false, error: 'El embargo no existe.' }
+
+  const expediente = input.expediente.trim()
+  if (expediente && mockEmbargos.some((e) => e.id !== id && e.idAgente === m.idAgente && e.expediente === expediente)) {
+    return { ok: false, error: 'Ya existe otro embargo con ese expediente para este agente.', field: 'expediente' }
+  }
+
+  const nroRetenciones = parseExpedienteRetenciones(input.expedienteRetenciones)
+  if (input.expedienteRetenciones.trim() && nroRetenciones === null) {
+    return { ok: false, error: 'El Expediente Retenciones N° debe tener hasta 9 dígitos.', field: 'expedienteRetenciones' }
+  }
+  if (nroRetenciones && mockEmbargos.some((e) => e.id !== id && e.nroExpedienteRetenciones === nroRetenciones)) {
+    return { ok: false, error: 'Ya existe un embargo con ese N° de expediente de retenciones.', field: 'expedienteRetenciones' }
+  }
+
   const estadoAnterior = m.estado
-  m.estado = (input.estado as EstadoEmbargo) || m.estado
+  // Desde la edición sólo se permite cancelar; el resto es automático.
+  const cancelaAhora = input.estado === 'CANCELADO' && !esEstadoCerradoMock(estadoAnterior)
   m.autos = input.autos.trim()
-  m.expediente = input.expediente.trim()
+  m.expediente = expediente
+  if (nroRetenciones) m.nroExpedienteRetenciones = nroRetenciones
   m.fechaExpediente = input.fechaExpediente.trim()
   m.cuenta = input.cuenta.trim()
   m.sucursal = input.sucursal.trim()
@@ -392,31 +456,39 @@ export async function actualizarEmbargo(id: number, input: EmbargoInput): Promis
   m.porcentaje = parseMoneyInput(input.porcentaje)
   m.marcaEspecial = input.marcaEspecial.trim()
   m.observaciones = input.observaciones.trim()
-  if (m.estado === 'BAJA' || m.estado === 'CANCELADO') {
+  if (cancelaAhora) {
+    m.estado = 'CANCELADO'
     m.fechaBaja = hoy
-    if (estadoAnterior !== 'BAJA' && estadoAnterior !== 'CANCELADO') m.motivoBaja = `Cambio de estado a ${m.estado.toLowerCase()}`
-  } else {
-    m.fechaBaja = ''
-    m.motivoBaja = ''
+    m.motivoBaja = 'Cambio de estado a cancelado'
   }
   recalcularSaldosMock(m.id)
+  if (cancelaAhora) activarSiguienteEsperaMock(m.idAgente, m.id)
   return { ok: true, embargo: mapEmbargo(m) }
 }
 
 export async function cambiarEstadoEmbargo(id: number, estado: string, motivo?: string): Promise<{ ok: boolean; error?: string; embargo?: Embargo }> {
   const m = mockEmbargos.find((e) => e.id === id)
   if (!m) return { ok: false, error: 'El embargo no existe.' }
-  m.estado = estado as EstadoEmbargo
-  const cierra = estado === 'BAJA' || estado === 'CANCELADO'
-  m.fechaBaja = cierra ? hoy : ''
-  m.motivoBaja = cierra ? motivo?.trim() || `Cambio de estado a ${estado.toLowerCase()}` : ''
+  if (estado !== 'CANCELADO') {
+    return {
+      ok: false,
+      error: 'Sólo se puede cancelar manualmente un embargo. Los demás estados se asignan automáticamente.',
+    }
+  }
+  if (esEstadoCerradoMock(m.estado)) return { ok: false, error: 'El embargo ya está cerrado.' }
+
+  m.estado = 'CANCELADO'
+  m.fechaBaja = hoy
+  m.motivoBaja = motivo?.trim() || 'Cambio de estado a cancelado'
+  activarSiguienteEsperaMock(m.idAgente, m.id)
   return { ok: true, embargo: mapEmbargo(m) }
 }
 
 export async function eliminarEmbargo(id: number): Promise<{ ok: boolean; error?: string }> {
   const idx = mockEmbargos.findIndex((e) => e.id === id)
   if (idx === -1) return { ok: false, error: 'El embargo no existe.' }
-  mockEmbargos.splice(idx, 1)
+  const [eliminado] = mockEmbargos.splice(idx, 1)
+  if (eliminado.estado === 'ACTIVO') activarSiguienteEsperaMock(eliminado.idAgente)
   return { ok: true }
 }
 
@@ -594,25 +666,30 @@ export async function consultarEmbargos(filtros: ConsultaEmbargosFiltros): Promi
 }
 
 export async function actualizarEsperas(): Promise<{ ok: boolean; error?: string; procesados: number; activados: number; cancelados: number; ajustados: number }> {
-  let activados = 0, cancelados = 0, ajustados = 0
   const candidatos = mockEmbargos.filter((m) => m.estado === 'ESPERA' || m.estado === 'ACTIVO')
+  const estadosAntes = new Map(candidatos.map((m) => [m.id, m.estado]))
+  const agentes = new Set<number>()
+  let ajustados = 0
+
   for (const m of candidatos) {
+    agentes.add(m.idAgente)
     const saldo = roundMoney(m.retenciones.reduce((acc, r) => acc - r.retencionMensual + r.devolucion, m.deuda))
     const ultima = m.retenciones[m.retenciones.length - 1]
     if (ultima && ultima.saldo !== saldo) ajustados++
-    if (saldo <= 0) {
-      m.estado = 'CANCELADO'
-      m.fechaBaja = hoy
-      m.motivoBaja = 'Deuda cancelada'
-      cancelados++
-    } else if (m.estado === 'ESPERA' && m.retenciones.length > 0) {
-      m.estado = 'ACTIVO'
-      m.fechaBaja = ''
-      m.motivoBaja = ''
-      activados++
-    }
+    // Da de baja las deudas saldadas y activa la siguiente espera si corresponde.
     recalcularSaldosMock(m.id)
   }
+
+  // Si un agente quedó sin embargo activo pero tiene esperas, activar la primera.
+  for (const idAgente of agentes) activarSiguienteEsperaMock(idAgente)
+
+  const activados = candidatos.filter(
+    (m) => estadosAntes.get(m.id) === 'ESPERA' && m.estado === 'ACTIVO',
+  ).length
+  const cancelados = candidatos.filter(
+    (m) => estadosAntes.get(m.id) !== 'BAJA' && m.estado === 'BAJA',
+  ).length
+
   return { ok: true, procesados: candidatos.length, activados, cancelados, ajustados }
 }
 
@@ -745,6 +822,7 @@ export async function restaurarBackup(payload: string): Promise<{ ok: boolean; e
       estado: (raw.estado as EstadoEmbargo) || 'ESPERA',
       autos: raw.autos ?? '',
       expediente: raw.expediente ?? '',
+      nroExpedienteRetenciones: parseExpedienteRetenciones(raw.expedienteRetenciones) ?? undefined,
       fechaExpediente: raw.fechaExpediente ?? '',
       cuenta: raw.cuenta ?? '',
       sucursal: raw.sucursal ?? '',

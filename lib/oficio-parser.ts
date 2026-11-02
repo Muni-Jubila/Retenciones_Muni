@@ -26,8 +26,8 @@ export interface DatosOficio {
   sucursal: string
   /** Juzgado / organismo interviniente. */
   juez: string
-  /** Secretaría judicial. */
-  secretaria: string
+  /** Nombre del juez detectado en el cierre/firma del oficio (vacío si no se detectó). */
+  juezNombre: string
   /** Porcentaje de retención indicado en el oficio (0 si no se detectó). */
   porcentaje: number
   /** Fecha del oficio / expediente en formato dd/mm/aaaa. */
@@ -373,13 +373,104 @@ function extractTribunal(text: string): string {
   return ''
 }
 
-function extractSecretaria(text: string, tribunal: string): string {
-  let match = text.match(/Secretar[ií]a\s+N[°º]\.?\s*(\d{1,3}(?:\s*(?:y|,)\s*\d{1,3})?)/i)
-  if (match) return cleanSpaces(match[1])
+function cleanNombreJuez(value: string): string {
+  return cleanSpaces(
+    value
+      .replace(/^(?:texto\s+)?firmado\s+digitalmente\s+por\s*:\s*/i, '')
+      .replace(/^(?:fdo\.?|firmado)\s*:?\s*/i, '')
+      .replace(/\s*(?:\(|\[)?(?:JUEZ\/A|JUEZA?|PROSECRETARIO\/A|SECRETARIO\/A)[^)\]]*\)?\s*$/i, '')
+      .replace(/[—–-]+\s*$/g, '')
+      .replace(/^[\s:;,.-]+|[\s:;,.-]+$/g, ''),
+  )
+}
 
-  if (tribunal) {
-    match = tribunal.match(/(?:-|\b)SEC(?:RETAR[IÍ]A)?\.?\s*(?:N[°º]\.?\s*)?(\d{1,3}(?:\s*(?:y|,)\s*\d{1,3})?)/i)
-    if (match) return cleanSpaces(match[1])
+function esNombreJuezPlausible(value: string): boolean {
+  if (!value || value.length < 3 || value.length > 80) return false
+  if (/\d/.test(value)) return false
+  if (!/[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(value)) return false
+  if (/\b(?:FECHA|EXPEDIENTE|SAC|P[AÁ]G(?:INA)?|TEXTO|FIRMADO|DIGITALMENTE)\b/i.test(value)) return false
+  return true
+}
+
+/**
+ * El nombre del juez suele aparecer en el cierre del oficio: en el bloque de
+ * firma digital ("Texto Firmado digitalmente por: ..." + "JUEZ/A DE 1RA.
+ * INSTANCIA") o dentro del texto ("Fdo: ... — Jueza —", "... (JUEZA)").
+ * Si el oficio no lo trae (por ejemplo, sólo firma el prosecretario), se deja
+ * vacío para que el operador lo complete.
+ */
+function extractJuezNombre(rawText: string): string {
+  const text = normalize(rawText)
+  const tail = text.length > 5000 ? text.slice(-5000) : text
+
+  const patterns = [
+    // "FERRERO, Cecilia María (JUEZA)"
+    /([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ'’.,-]+(?:\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ'’.,-]+){0,4})\s*\(\s*JUEZA?\s*\)/,
+    // "Fdo: Silvina Ana Izquierdo — Jueza —"
+    /([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ'’.,-]+(?:\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ'’.,-]+){0,4})\s*[—–-]\s*JUEZA?\b/i,
+    // "Firmado Digitalmente por: Fassetta Domingo — Juez"
+    /(?:Fdo\.?|Firmado\s+(?:digitalmente\s+)?por)\s*:?\s*([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ'’.,-]+(?:\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ'’.,-]+){0,4})\s*[—–-]\s*JUEZA?\b/i,
+  ]
+  for (const pattern of patterns) {
+    const match = tail.match(pattern)
+    if (!match) continue
+    const nombre = cleanNombreJuez(match[1])
+    if (esNombreJuezPlausible(nombre)) return nombre
+  }
+
+  const lines = tail
+    .split('\n')
+    .map((line) => cleanSpaces(line))
+    .filter(Boolean)
+
+  const roleOnly = /^(?:JUEZ\/A|JUEZA?)\s*(?:DE\s+)?(?:1RA?\.?\s*)?(?:INSTANCIA)?\s*$/i
+  const roleInline = /^(.+?)\s+(?:JUEZ\/A|JUEZA?)\s*(?:DE\s+)?(?:1RA?\.?\s*)?(?:INSTANCIA)\b/i
+  const roleAtEnd = /^(.+?)\s+(?:JUEZ\/A|JUEZA?)\s*$/i
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+
+    const inline = line.match(roleInline)
+    if (inline) {
+      const nombre = cleanNombreJuez(inline[1])
+      if (esNombreJuezPlausible(nombre)) return nombre
+    }
+
+    const atEnd = line.match(roleAtEnd)
+    if (atEnd && /^(?:DE\s+)?(?:1RA?\.?\s*)?(?:INSTANCIA)\b/i.test(lines[i + 1] ?? '')) {
+      const nombre = cleanNombreJuez(atEnd[1])
+      if (esNombreJuezPlausible(nombre)) return nombre
+    }
+
+    if (roleOnly.test(line)) {
+      // El nombre suele estar en la línea anterior, a veces precedido por
+      // "Texto Firmado digitalmente por:" y, en algunos oficios, partido en
+      // dos líneas (por ejemplo "ORTIZ ZAVALLA MELONI Alejandro" / "Sebastián").
+      const prev = cleanNombreJuez(lines[i - 1] ?? '')
+      const prevPrevRaw = lines[i - 2] ?? ''
+      const prevPrev = cleanNombreJuez(prevPrevRaw)
+      if (
+        prev &&
+        /^(?:texto\s+)?firmado\s+digitalmente\s+por\s*:/i.test(prevPrevRaw) &&
+        prevPrev
+      ) {
+        const combinado = cleanNombreJuez(`${prevPrev} ${prev}`)
+        if (esNombreJuezPlausible(combinado)) return combinado
+      }
+
+      for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+        const candidate = cleanNombreJuez(lines[j])
+        if (!candidate || roleOnly.test(candidate)) continue
+        if (/^(?:fecha|expediente|texto|firmado)\b/i.test(candidate)) continue
+        if (esNombreJuezPlausible(candidate)) return candidate
+      }
+    }
+  }
+
+  const labeled = tail.match(/\bJUEZ(?:A)?\s*[:\-]\s*([A-ZÁÉÍÓÚÑ][^\n]{2,80})/i)
+  if (labeled) {
+    const nombre = cleanNombreJuez(labeled[1])
+    if (esNombreJuezPlausible(nombre)) return nombre
   }
 
   return ''
@@ -445,7 +536,7 @@ export function parseOficio(rawText: string, fileName = ''): DatosOficio {
   const cuenta = extractCuenta(flat)
   const sucursal = extractSucursal(flat)
   const juez = extractTribunal(flat)
-  const secretaria = extractSecretaria(flat, juez)
+  const juezNombre = extractJuezNombre(text)
   const porcentaje = extractPorcentaje(flat)
   const fechaExpediente = extractFecha(flat)
   const numeroOficio = extractOficio(flat, fileName)
@@ -469,7 +560,7 @@ export function parseOficio(rawText: string, fileName = ''): DatosOficio {
     cuenta,
     sucursal,
     juez,
-    secretaria,
+    juezNombre,
     porcentaje,
     fechaExpediente,
     numeroOficio,

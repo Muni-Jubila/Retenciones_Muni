@@ -80,13 +80,16 @@ function oficioToPrefill(datos: DatosOficio): Partial<EmbargoInput> {
   if (datos.autos) prefill.autos = datos.autos
   if (datos.expediente) prefill.expediente = datos.expediente
   if (datos.fechaExpediente) prefill.fechaExpediente = datos.fechaExpediente
-  if (datos.cuenta) prefill.cuenta = datos.cuenta
+  if (datos.cuenta) {
+    // La Cuenta N° se guarda sólo con dígitos y hasta 8 posiciones.
+    const cuenta = datos.cuenta.replace(/\D/g, '')
+    if (cuenta && cuenta.length <= 8) prefill.cuenta = cuenta
+  }
   if (datos.sucursal) prefill.sucursal = datos.sucursal
   if (datos.juez) prefill.juez = datos.juez
-  // La secretaría del formulario es la judicial, no la repartición del agente:
-  // si el oficio no la trae, debe quedar vacía en lugar de heredar "SALUD", etc.
-  prefill.secretaria = datos.secretaria
-  if (datos.tipoProceso) prefill.tipoProceso = datos.tipoProceso
+  // El campo “Juez” del formulario guarda el nombre del juez detectado en el
+  // cierre del oficio. Si no aparece, queda vacío para completarlo manualmente.
+  prefill.secretaria = datos.juezNombre
   if (datos.monto > 0) prefill.deuda = moneyToInput(datos.monto)
   if (datos.numeroOficio) prefill.observaciones = `Oficio judicial N° ${datos.numeroOficio}.`
   return prefill
@@ -869,25 +872,23 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 print:hidden">
-                    <select
-                      value=""
-                      onChange={(event) => {
-                        const estado = event.target.value as EstadoEmbargo
-                        if (estado) {
-                          setMotivoEstado(estado === 'CANCELADO' ? 'Deuda cancelada' : '')
-                          setEstadoConfirm({ id: selected.id, estado })
-                        }
-                      }}
-                      className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-700 focus:border-[#1e3a8a] focus:outline-none"
-                      title="Cambiar estado del embargo"
-                    >
-                      <option value="">Cambiar estado...</option>
-                      {ESTADOS_EMBARGO.filter((item) => item.value !== selected.estado).map((item) => (
-                        <option key={item.value} value={item.value}>
-                          {item.letra} · {item.label}
-                        </option>
-                      ))}
-                    </select>
+                    {(selected.estado === 'ACTIVO' || selected.estado === 'ESPERA') && (
+                      <select
+                        value=""
+                        onChange={(event) => {
+                          const estado = event.target.value as EstadoEmbargo
+                          if (estado === 'CANCELADO') {
+                            setMotivoEstado('')
+                            setEstadoConfirm({ id: selected.id, estado })
+                          }
+                        }}
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-700 focus:border-[#1e3a8a] focus:outline-none"
+                        title="Cancelar el embargo"
+                      >
+                        <option value="">Cancelar embargo...</option>
+                        <option value="CANCELADO">C · Cancelado</option>
+                      </select>
+                    )}
                     <button
                       type="button"
                       onClick={openEditar}
@@ -915,11 +916,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                   <DetailItem label="Cuenta N°" value={<span className="font-mono">{selected.cuenta}</span>} />
                   <DetailItem label="Sucursal" value={selected.sucursal} />
                   <DetailItem label="Juez de" value={selected.juez} />
-                  <DetailItem label="Inst. y" value={selected.instancia} />
-                  <DetailItem label="Nom." value={selected.nomenclatura} />
-                  <DetailItem label="T." value={selected.tipoProceso} />
-                  <DetailItem label="Secretaría judicial" value={selected.secretaria} />
-                  <DetailItem label="Marca especial" value={selected.marcaEspecial} />
+                  <DetailItem label="Juez" value={selected.secretaria} />
                   <DetailItem label="Fecha de alta" value={selected.fechaAlta} />
                   <DetailItem label="Fecha de baja" value={selected.fechaBaja} />
                   <DetailItem label="Motivo de baja" value={selected.motivoBaja} className="col-span-2" />
@@ -1087,18 +1084,16 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
 
       <ConfirmDialog
         open={Boolean(estadoConfirm)}
-        title="Cambiar estado del embargo"
+        title="Cancelar embargo"
         description={
           estadoConfirm ? (
             <>
-              Vas a cambiar el embargo a <strong>{ESTADOS_EMBARGO.find((item) => item.value === estadoConfirm.estado)?.label}</strong>.
-              {estadoConfirm.estado === 'BAJA' && ' El embargo quedará dado de baja y se registrará la fecha.'}
-              {estadoConfirm.estado === 'CANCELADO' && ' Se considerará cancelado/finalizado.'}
-              {estadoConfirm.estado === 'ACTIVO' && ' Volverá a estar vigente para imputar retenciones.'}
+              Vas a cancelar el embargo <strong>{selected?.expediente || 'seleccionado'}</strong>. Si hay otro embargo
+              del agente en espera, pasará automáticamente a <strong>activo</strong>.
             </>
           ) : ''
         }
-        confirmLabel="Cambiar estado"
+        confirmLabel="Cancelar embargo"
         loading={actionLoading}
         onCancel={() => {
           setEstadoConfirm(null)
@@ -1106,10 +1101,10 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
         }}
         onConfirm={() => void handleConfirmEstado()}
       >
-        {estadoConfirm && (estadoConfirm.estado === 'BAJA' || estadoConfirm.estado === 'CANCELADO') && (
+        {estadoConfirm && (
           <div className="mt-3">
             <TextField
-              label="Motivo de la baja / cancelación"
+              label="Motivo de la cancelación"
               value={motivoEstado}
               onChange={setMotivoEstado}
               placeholder="Ej.: Renuncia, Decreto 1234/26, Deuda cancelada"

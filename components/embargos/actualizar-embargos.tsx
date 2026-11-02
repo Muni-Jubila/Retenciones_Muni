@@ -112,7 +112,7 @@ export default function ActualizarEmbargos() {
       }
       setEsperas(resultado)
       setNotice(
-        `Esperas actualizadas: ${resultado.procesados} revisadas, ${resultado.activados} activadas, ${resultado.cancelados} canceladas y ${resultado.ajustados} con saldo ajustado.`,
+        `Esperas actualizadas: ${resultado.procesados} revisadas, ${resultado.activados} activadas, ${resultado.cancelados} dadas de baja y ${resultado.ajustados} con saldo ajustado.`,
       )
     } catch {
       setError('No se pudieron actualizar las esperas. Verifique la conexión.')
@@ -273,7 +273,7 @@ export default function ActualizarEmbargos() {
         <ActionCard
           icon={<RefreshCw className="h-4 w-4" />}
           title="Actualizar esperas y saldos"
-          description="Recalcula los saldos de todos los embargos, activa las esperas con retenciones imputadas y cancela las deudas ya saldadas."
+          description="Recalcula los saldos de todos los embargos, pasa a baja las deudas saldadas y activa la siguiente espera del agente."
           tone="blue"
         >
           <button
@@ -289,7 +289,7 @@ export default function ActualizarEmbargos() {
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="rounded-lg bg-slate-50 p-2"><p className="text-lg font-bold text-slate-800">{esperas.procesados}</p><p className="text-[9px] uppercase text-slate-400">Revisados</p></div>
               <div className="rounded-lg bg-emerald-50 p-2"><p className="text-lg font-bold text-emerald-700">{esperas.activados}</p><p className="text-[9px] uppercase text-emerald-600">Activados</p></div>
-              <div className="rounded-lg bg-slate-100 p-2"><p className="text-lg font-bold text-slate-600">{esperas.cancelados}</p><p className="text-[9px] uppercase text-slate-500">Cancelados</p></div>
+              <div className="rounded-lg bg-slate-100 p-2"><p className="text-lg font-bold text-slate-600">{esperas.cancelados}</p><p className="text-[9px] uppercase text-slate-500">Bajas</p></div>
             </div>
           )}
         </ActionCard>
@@ -414,8 +414,8 @@ export default function ActualizarEmbargos() {
         {/* Altas / activar esperas */}
         <ActionCard
           icon={<CalendarSync className="h-4 w-4" />}
-          title="Altas · Activar esperas previas al sueldo"
-          description="Revisa las altas pendientes y activa las esperas que ya tienen retenciones imputadas, dejándolas listas para el próximo sueldo."
+          title="Altas · Activar la siguiente espera"
+          description="Revisa los embargos pendientes y activa la primera espera cuando el agente no tiene ningún embargo activo, dejándola lista para el próximo sueldo."
           tone="emerald"
         >
           <button
@@ -428,7 +428,7 @@ export default function ActualizarEmbargos() {
             Activar esperas
           </button>
           <p className="text-[10px] text-slate-400">
-            Las altas sin retenciones permanecen en estado E (espera).
+            Si el agente ya tiene un embargo activo, las altas permanecen en estado E (espera).
           </p>
         </ActionCard>
       </div>
