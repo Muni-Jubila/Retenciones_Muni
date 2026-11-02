@@ -16,7 +16,10 @@ import {
   periodoLabel,
   parseExpedienteRetenciones,
   parseMoneyInput,
+  calcularRetencionHaberes,
+  repartirRetencion,
   roundMoney,
+  SALARIO_MINIMO_DEFAULT,
   toCsv,
   type ConsultaEmbargosFiltros,
   type Embargo,
@@ -61,13 +64,32 @@ function parseDate(value: string): Date | null {
 }
 
 function mapRetencion(fila: RetencionDb): RetencionEmbargo {
+  const sueldo = Number(fila.SUELDO)
+  const refrigerio = Number(fila.REFRIGERIO)
+  const retencionMensual = Number(fila.RETENCION_MENSUAL)
+  let retencionSueldo = Number(fila.RETENCION_SUELDO ?? 0)
+  let retencionRefrigerio = Number(fila.RETENCION_REFRIGERIO ?? 0)
+  // Retenciones anteriores al desglose: repartir en proporción a los haberes.
+  if (retencionSueldo === 0 && retencionRefrigerio === 0 && retencionMensual > 0) {
+    const haberes = roundMoney(sueldo + refrigerio)
+    if (haberes > 0) {
+      retencionSueldo = roundMoney((retencionMensual * sueldo) / haberes)
+      retencionRefrigerio = roundMoney(retencionMensual - retencionSueldo)
+    } else {
+      retencionSueldo = retencionMensual
+    }
+  }
+
   return {
     id: fila.ID_RETENCION,
     idEmbargo: fila.ID_EMBARGO,
     periodo: fila.PERIODO,
-    sueldo: Number(fila.SUELDO),
-    refrigerio: Number(fila.REFRIGERIO),
-    retencionMensual: Number(fila.RETENCION_MENSUAL),
+    sueldo,
+    refrigerio,
+    retencionSueldo,
+    retencionRefrigerio,
+    salarioMinimo: Number(fila.SALARIO_MINIMO ?? SALARIO_MINIMO_DEFAULT),
+    retencionMensual,
     saldo: Number(fila.SALDO),
     devolucion: Number(fila.DEVOLUCION),
     observaciones: fila.OBSERVACIONES ?? '',
@@ -657,9 +679,15 @@ export async function crearRetencion(input: RetencionInput): Promise<RetencionAc
 
     const sueldoNum = parseMoneyInput(input.sueldo)
     const refrigerioNum = parseMoneyInput(input.refrigerio)
+    if (sueldoNum < 0 || refrigerioNum < 0) {
+      return { ok: false, error: 'El sueldo y el refrigerio no pueden ser negativos.', field: 'sueldo' }
+    }
+    const salarioMinimo = input.salarioMinimo?.trim() ? parseMoneyInput(input.salarioMinimo) : SALARIO_MINIMO_DEFAULT
+    if (salarioMinimo < 0) return { ok: false, error: 'El salario mínimo no puede ser negativo.', field: 'salarioMinimo' }
     let retencion = parseMoneyInput(input.retencionMensual)
     if (retencion === 0 && (sueldoNum > 0 || refrigerioNum > 0)) {
-      retencion = roundMoney(sueldoNum + refrigerioNum)
+      // Si el operador no define el importe, se toma el cálculo de haberes.
+      retencion = calcularRetencionHaberes(sueldoNum, refrigerioNum, salarioMinimo).retencionMensual
     }
     const devolucion = parseMoneyInput(input.devolucion)
     if (retencion < 0) return { ok: false, error: 'La retención no puede ser negativa.', field: 'retencionMensual' }
@@ -667,6 +695,7 @@ export async function crearRetencion(input: RetencionInput): Promise<RetencionAc
     if (retencion === 0 && devolucion === 0) {
       return { ok: false, error: 'Ingrese una retención o una devolución.', field: 'retencionMensual' }
     }
+    const desglose = repartirRetencion(retencion, sueldoNum, refrigerioNum, salarioMinimo)
 
     const saldoPrevio = roundMoney(
       embargo.RETENCION_EMBARGO.filter((item) => item.PERIODO < periodo).reduce(
@@ -688,8 +717,11 @@ export async function crearRetencion(input: RetencionInput): Promise<RetencionAc
       data: {
         ID_EMBARGO: input.idEmbargo,
         PERIODO: periodo,
-        SUELDO: decimal(parseMoneyInput(input.sueldo)),
-        REFRIGERIO: decimal(parseMoneyInput(input.refrigerio)),
+        SUELDO: decimal(sueldoNum),
+        REFRIGERIO: decimal(refrigerioNum),
+        RETENCION_SUELDO: decimal(desglose.retencionSueldo),
+        RETENCION_REFRIGERIO: decimal(desglose.retencionRefrigerio),
+        SALARIO_MINIMO: decimal(salarioMinimo),
         RETENCION_MENSUAL: decimal(retencion),
         DEVOLUCION: decimal(devolucion),
         SALDO: decimal(saldo),
@@ -740,6 +772,15 @@ export async function actualizarRetencion(
       return { ok: false, error: 'Ingrese una retención o una devolución.', field: 'retencionMensual' }
     }
 
+    const haberesSueldo = parseMoneyInput(input.sueldo)
+    const haberesRefrigerio = parseMoneyInput(input.refrigerio)
+    if (haberesSueldo < 0 || haberesRefrigerio < 0) {
+      return { ok: false, error: 'El sueldo y el refrigerio no pueden ser negativos.', field: 'sueldo' }
+    }
+    const salarioMinimo = input.salarioMinimo?.trim() ? parseMoneyInput(input.salarioMinimo) : SALARIO_MINIMO_DEFAULT
+    if (salarioMinimo < 0) return { ok: false, error: 'El salario mínimo no puede ser negativo.', field: 'salarioMinimo' }
+    const desglose = repartirRetencion(retencion, haberesSueldo, haberesRefrigerio, salarioMinimo)
+
     const embargo = await prisma.eMBARGO.findUnique({
       where: { ID_EMBARGO: actual.ID_EMBARGO },
       include: { RETENCION_EMBARGO: { orderBy: { PERIODO: 'asc' } } },
@@ -765,8 +806,11 @@ export async function actualizarRetencion(
       where: { ID_RETENCION: id },
       data: {
         PERIODO: periodo,
-        SUELDO: decimal(parseMoneyInput(input.sueldo)),
-        REFRIGERIO: decimal(parseMoneyInput(input.refrigerio)),
+        SUELDO: decimal(haberesSueldo),
+        REFRIGERIO: decimal(haberesRefrigerio),
+        RETENCION_SUELDO: decimal(desglose.retencionSueldo),
+        RETENCION_REFRIGERIO: decimal(desglose.retencionRefrigerio),
+        SALARIO_MINIMO: decimal(salarioMinimo),
         RETENCION_MENSUAL: decimal(retencion),
         DEVOLUCION: decimal(devolucion),
         SALDO: decimal(saldo),
@@ -1212,6 +1256,9 @@ interface BackupRetencion {
   periodo: string
   sueldo: number
   refrigerio: number
+  retencionSueldo?: number
+  retencionRefrigerio?: number
+  salarioMinimo?: number
   retencionMensual: number
   saldo: number
   devolucion: number
@@ -1423,6 +1470,9 @@ export async function restaurarBackup(payload: string): Promise<RestauracionResu
               PERIODO: retencion.periodo,
               SUELDO: decimal(Number(retencion.sueldo) || 0),
               REFRIGERIO: decimal(Number(retencion.refrigerio) || 0),
+              RETENCION_SUELDO: decimal(Number(retencion.retencionSueldo) || 0),
+              RETENCION_REFRIGERIO: decimal(Number(retencion.retencionRefrigerio) || 0),
+              SALARIO_MINIMO: decimal(Number(retencion.salarioMinimo) || SALARIO_MINIMO_DEFAULT),
               RETENCION_MENSUAL: decimal(Number(retencion.retencionMensual) || 0),
               SALDO: decimal(Number(retencion.saldo) || 0),
               DEVOLUCION: decimal(Number(retencion.devolucion) || 0),

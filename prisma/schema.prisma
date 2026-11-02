@@ -249,18 +249,23 @@ model EMBARGO {
 }
 
 model RETENCION_EMBARGO {
-  ID_RETENCION      Int      @id(map: "PK__RETENCION_EMBARGO__ID") @default(autoincrement())
-  ID_EMBARGO        Int
-  PERIODO           String   @db.VarChar(7)
-  SUELDO            Decimal  @default(0) @db.Decimal(14, 2)
-  REFRIGERIO        Decimal  @default(0) @db.Decimal(14, 2)
-  RETENCION_MENSUAL Decimal  @default(0) @db.Decimal(14, 2)
-  SALDO             Decimal  @default(0) @db.Decimal(14, 2)
-  DEVOLUCION        Decimal  @default(0) @db.Decimal(14, 2)
-  OBSERVACIONES     String?  @db.VarChar(500)
-  FECHA_REGISTRO    DateTime @default(now())
-  USUARIO_CREACION  Int
-  EMBARGO           EMBARGO  @relation(fields: [ID_EMBARGO], references: [ID_EMBARGO], onDelete: Cascade, onUpdate: NoAction, map: "fk_RETENCION_EMBARGO")
+  ID_RETENCION        Int      @id(map: "PK__RETENCION_EMBARGO__ID") @default(autoincrement())
+  ID_EMBARGO          Int
+  PERIODO             String   @db.VarChar(7)
+  SUELDO              Decimal  @default(0) @db.Decimal(14, 2)
+  REFRIGERIO          Decimal  @default(0) @db.Decimal(14, 2)
+  /// Cuánto se retuvo del sueldo y del refrigerio ese mes.
+  RETENCION_SUELDO    Decimal  @default(0) @db.Decimal(14, 2)
+  RETENCION_REFRIGERIO Decimal @default(0) @db.Decimal(14, 2)
+  /// Salario mínimo vital y móvil vigente cuando se registró la retención.
+  SALARIO_MINIMO      Decimal  @default(398800) @db.Decimal(14, 2)
+  RETENCION_MENSUAL   Decimal  @default(0) @db.Decimal(14, 2)
+  SALDO               Decimal  @default(0) @db.Decimal(14, 2)
+  DEVOLUCION          Decimal  @default(0) @db.Decimal(14, 2)
+  OBSERVACIONES       String?  @db.VarChar(500)
+  FECHA_REGISTRO      DateTime @default(now())
+  USUARIO_CREACION    Int
+  EMBARGO             EMBARGO  @relation(fields: [ID_EMBARGO], references: [ID_EMBARGO], onDelete: Cascade, onUpdate: NoAction, map: "fk_RETENCION_EMBARGO")
 
   @@unique([ID_EMBARGO, PERIODO], map: "uq_retencion_embargo_periodo")
   @@index([PERIODO], map: "idx_retencion_periodo")
