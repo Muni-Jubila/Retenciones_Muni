@@ -11,6 +11,7 @@ import { getDateValidationError } from '@/lib/format-utils'
 import {
   ESTADOS_EMBARGO,
   formatExpedienteRetenciones,
+  ordenarEmbargos,
   periodoActual,
   periodoLabel,
   parseExpedienteRetenciones,
@@ -330,9 +331,8 @@ export async function listarEmbargosDeAgente(idAgente: number): Promise<Embargo[
     const filas = await prisma.eMBARGO.findMany({
       where: { ID_AGENTE: idAgente, BIT_BORRADO: false },
       include: includeEmbargo,
-      orderBy: [{ FECHA_ALTA: 'desc' }, { ID_EMBARGO: 'desc' }],
     })
-    return filas.map(mapEmbargo)
+    return ordenarEmbargos(filas.map(mapEmbargo))
   } catch (error) {
     logServerError('[listarEmbargosDeAgente] Error:', error)
     throw new Error('No se pudieron cargar los embargos del agente.')
@@ -639,6 +639,9 @@ export async function crearRetencion(input: RetencionInput): Promise<RetencionAc
       include: { RETENCION_EMBARGO: { orderBy: { PERIODO: 'asc' } } },
     })
     if (!embargo) return { ok: false, error: 'El embargo no existe o fue eliminado.' }
+    if (embargo.ESTADO !== 'ACTIVO') {
+      return { ok: false, error: 'Solo se pueden agregar retenciones a un embargo activo.' }
+    }
 
     const existente = embargo.RETENCION_EMBARGO.find((item) => item.PERIODO === periodo)
     if (existente) {

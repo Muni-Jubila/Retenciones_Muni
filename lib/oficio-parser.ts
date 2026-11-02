@@ -396,8 +396,8 @@ function esNombreJuezPlausible(value: string): boolean {
  * El nombre del juez suele aparecer en el cierre del oficio: en el bloque de
  * firma digital ("Texto Firmado digitalmente por: ..." + "JUEZ/A DE 1RA.
  * INSTANCIA") o dentro del texto ("Fdo: ... — Jueza —", "... (JUEZA)").
- * Si el oficio no lo trae (por ejemplo, sólo firma el prosecretario), se deja
- * vacío para que el operador lo complete.
+ * Esta función busca el nombre asociado explícitamente al rol de juez; si no
+ * aparece, parseOficio recurre al último firmante del documento.
  */
 function extractJuezNombre(rawText: string): string {
   const text = normalize(rawText)
@@ -476,6 +476,32 @@ function extractJuezNombre(rawText: string): string {
   return ''
 }
 
+/**
+ * Último firmante del documento. En muchos oficios el nombre del juez no está
+ * acompañado de la palabra "JUEZ/A", pero es el de la persona que firma al
+ * final del archivo (bloque "Texto Firmado digitalmente por: ...").
+ */
+function extractUltimoFirmante(rawText: string): string {
+  const text = normalize(rawText)
+  const pattern = /(?:texto\s+)?firmado\s+digitalmente\s+por\s*:\s*([^\n]+)/gi
+  let match: RegExpExecArray | null
+  let ultimo = ''
+
+  while ((match = pattern.exec(text))) {
+    const nombre = cleanNombreJuez(match[1])
+    if (esNombreJuezPlausible(nombre)) ultimo = nombre
+  }
+  if (ultimo) return ultimo
+
+  const fdo = text.match(/(?:^|\n)\s*(?:Fdo\.?|Firmado)\s*:?\s*([^\n]{3,80})\s*$/i)
+  if (fdo) {
+    const nombre = cleanNombreJuez(fdo[1])
+    if (esNombreJuezPlausible(nombre)) return nombre
+  }
+
+  return ''
+}
+
 function extractPorcentaje(text: string): number {
   const match = text.match(/(\d{1,2})\s*%/i)
   return match ? Number(match[1]) : 0
@@ -536,7 +562,7 @@ export function parseOficio(rawText: string, fileName = ''): DatosOficio {
   const cuenta = extractCuenta(flat)
   const sucursal = extractSucursal(flat)
   const juez = extractTribunal(flat)
-  const juezNombre = extractJuezNombre(text)
+  const juezNombre = extractJuezNombre(text) || extractUltimoFirmante(text)
   const porcentaje = extractPorcentaje(flat)
   const fechaExpediente = extractFecha(flat)
   const numeroOficio = extractOficio(flat, fileName)

@@ -803,7 +803,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                       <th className="px-3 py-2 text-left">Exp. Retenciones</th>
                       <th className="px-3 py-2 text-left">Fecha</th>
                       <th className="px-3 py-2 text-right">Deuda</th>
-                      <th className="px-3 py-2 text-right">Retención</th>
+                      <th className="px-3 py-2 text-right">Retenido</th>
                       <th className="px-3 py-2 text-right">Saldo</th>
                       <th className="px-3 py-2 text-left">Estado</th>
                     </tr>
@@ -837,7 +837,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                           <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-500">{embargo.expedienteRetenciones || '—'}</td>
                           <td className="whitespace-nowrap px-3 py-2 text-slate-500">{embargo.fechaExpediente || '—'}</td>
                           <td className="whitespace-nowrap px-3 py-2 text-right"><Money value={embargo.deuda} className="text-slate-700" /></td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right"><Money value={embargo.importeMensual} className="text-slate-700" /></td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right"><Money value={embargo.totalRetenido} className="text-emerald-700" /></td>
                           <td className="whitespace-nowrap px-3 py-2 text-right">
                             <Money value={embargo.saldoActual} className={embargo.saldoActual > 0 ? 'font-bold text-rose-600' : 'font-bold text-emerald-600'} />
                           </td>
@@ -915,7 +915,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                   <DetailItem label="Fecha expediente" value={selected.fechaExpediente} />
                   <DetailItem label="Cuenta N°" value={<span className="font-mono">{selected.cuenta}</span>} />
                   <DetailItem label="Sucursal" value={selected.sucursal} />
-                  <DetailItem label="Juez de" value={selected.juez} />
+                  <DetailItem label="Juzgado" value={selected.juez} />
                   <DetailItem label="Juez" value={selected.secretaria} />
                   <DetailItem label="Fecha de alta" value={selected.fechaAlta} />
                   <DetailItem label="Fecha de baja" value={selected.fechaBaja} />
@@ -967,18 +967,24 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                     <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] text-slate-600">{retenciones.length}</span>
                   </h3>
                   <div className="flex items-center gap-2 print:hidden">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRetencionEdit(null)
-                        setRetencionError(null)
-                        setShowRetencionForm(true)
-                      }}
-                      className="flex items-center gap-1.5 rounded-lg bg-[#1e3a8a] px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#172554]"
-                    >
-                      <CalendarPlus className="h-3 w-3" />
-                      Agregar retención
-                    </button>
+                    {selected.estado === 'ACTIVO' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRetencionEdit(null)
+                          setRetencionError(null)
+                          setShowRetencionForm(true)
+                        }}
+                        className="flex items-center gap-1.5 rounded-lg bg-[#1e3a8a] px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#172554]"
+                      >
+                        <CalendarPlus className="h-3 w-3" />
+                        Agregar retención
+                      </button>
+                    ) : (
+                      <span className="text-[10px] font-semibold text-amber-700">
+                        Solo se pueden agregar retenciones al embargo activo.
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -1006,7 +1012,9 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                     <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-4 py-6 text-center">
                       <p className="text-xs font-semibold text-slate-600">Todavía no hay retenciones registradas.</p>
                       <p className="mt-1 text-[10px] text-slate-400">
-                        Agregá el primer mes o usá “Actualizar → Imputar sueldo/refrigerio” para generarlas en lote.
+                        {selected.estado === 'ACTIVO'
+                          ? 'Agregá el primer mes o usá “Actualizar → Imputar sueldo/refrigerio” para generarlas en lote.'
+                          : 'Las retenciones se cargan únicamente cuando el embargo está activo.'}
                       </p>
                     </div>
                   ) : (

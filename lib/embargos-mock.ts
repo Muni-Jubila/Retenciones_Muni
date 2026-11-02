@@ -2,6 +2,7 @@ import type { Empleado } from '@/lib/empleados'
 import {
   formatExpedienteRetenciones,
   formatMoney,
+  ordenarEmbargos,
   parseExpedienteRetenciones,
   parseMoneyInput,
   roundMoney,
@@ -365,7 +366,7 @@ export async function listarEmbargosDeAgente(idAgente: number, empleado?: Emplea
     cargo: empleado?.cargo ?? m.cargo,
     retenciones: m.retenciones.map((r) => ({ ...r, idEmbargo: m.id })),
   }))
-  return clones.map(mapEmbargo).sort((a, b) => b.id - a.id)
+  return ordenarEmbargos(clones.map(mapEmbargo))
 }
 
 export async function crearEmbargo(input: EmbargoInput): Promise<{ ok: boolean; error?: string; field?: string; embargo?: Embargo }> {
@@ -514,6 +515,9 @@ export async function listarRetenciones(idEmbargo: number): Promise<RetencionEmb
 export async function crearRetencion(input: RetencionInput): Promise<{ ok: boolean; error?: string; field?: string; retencion?: RetencionEmbargo; saldoActual?: number }> {
   const m = mockEmbargos.find((e) => e.id === input.idEmbargo)
   if (!m) return { ok: false, error: 'El embargo no existe.' }
+  if (m.estado !== 'ACTIVO') {
+    return { ok: false, error: 'Solo se pueden agregar retenciones a un embargo activo.' }
+  }
   if (m.retenciones.some((r) => r.periodo === input.periodo)) {
     return { ok: false, error: `Ya existe una retención para ${periodoLabel(input.periodo)}.`, field: 'periodo' }
   }

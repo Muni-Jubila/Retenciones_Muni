@@ -204,7 +204,7 @@ export default function EmbargoForm({
               error={field === 'cuenta' ? error : null}
             />
             <TextField
-              label="Juez de"
+              label="Juzgado"
               value={form.juez}
               onChange={(value) => update('juez', value)}
               placeholder="Juzgado / organismo"

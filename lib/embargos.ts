@@ -290,6 +290,39 @@ export function resumenEstados(embargos: Embargo[]) {
   }
 }
 
+const PRIORIDAD_ESTADO_EMBARGO: Record<string, number> = {
+  ACTIVO: 0,
+  ESPERA: 1,
+  // Baja y cancelado son estados cerrados: se muestran al final, juntos y en
+  // orden cronológico.
+  BAJA: 2,
+  CANCELADO: 2,
+}
+
+function fechaOrdenable(value: string): string {
+  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value.trim())
+  if (!match) return value.trim()
+  return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`
+}
+
+/**
+ * Ordena los embargos de un agente para la ficha:
+ * primero el activo, luego los que están en espera según fueron cargados y
+ * por último los cerrados (baja/cancelado) en orden cronológico.
+ */
+export function ordenarEmbargos<T extends Pick<Embargo, 'id' | 'estado' | 'fechaAlta'>>(embargos: T[]): T[] {
+  return [...embargos].sort((a, b) => {
+    const prioridadA = PRIORIDAD_ESTADO_EMBARGO[a.estado] ?? 9
+    const prioridadB = PRIORIDAD_ESTADO_EMBARGO[b.estado] ?? 9
+    if (prioridadA !== prioridadB) return prioridadA - prioridadB
+
+    const fechaA = fechaOrdenable(a.fechaAlta)
+    const fechaB = fechaOrdenable(b.fechaAlta)
+    if (fechaA !== fechaB) return fechaA.localeCompare(fechaB)
+    return a.id - b.id
+  })
+}
+
 export function csvEscape(value: string | number | null | undefined): string {
   const text = String(value ?? '')
   if (/[";\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`
