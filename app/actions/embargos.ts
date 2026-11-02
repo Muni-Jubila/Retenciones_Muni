@@ -79,7 +79,11 @@ function mapEmbargo(fila: EmbargoDb): Embargo {
   const retenciones = [...fila.RETENCION_EMBARGO].sort((a, b) => a.PERIODO.localeCompare(b.PERIODO))
   const deuda = Number(fila.DEUDA)
   const totalRetenido = roundMoney(
-    retenciones.reduce((acc, item) => acc + Number(item.RETENCION_MENSUAL), 0),
+    retenciones.reduce((acc, item) => {
+      const mensual = Number(item.RETENCION_MENSUAL)
+      const desglose = roundMoney(Number(item.SUELDO) + Number(item.REFRIGERIO))
+      return acc + (mensual > 0 ? mensual : desglose)
+    }, 0),
   )
   const totalDevuelto = roundMoney(
     retenciones.reduce((acc, item) => acc + Number(item.DEVOLUCION), 0),
@@ -256,7 +260,10 @@ async function recalcularSaldos(idEmbargo: number): Promise<number | null> {
 
   let saldo = Number(embargo.DEUDA)
   for (const retencion of embargo.RETENCION_EMBARGO) {
-    saldo = roundMoney(saldo - Number(retencion.RETENCION_MENSUAL) + Number(retencion.DEVOLUCION))
+    const mensual = Number(retencion.RETENCION_MENSUAL)
+    const desglose = roundMoney(Number(retencion.SUELDO) + Number(retencion.REFRIGERIO))
+    const efectiva = mensual > 0 ? mensual : desglose
+    saldo = roundMoney(saldo - efectiva + Number(retencion.DEVOLUCION))
     if (Number(retencion.SALDO) !== saldo) {
       await prisma.rETENCION_EMBARGO.update({
         where: { ID_RETENCION: retencion.ID_RETENCION },
@@ -648,7 +655,12 @@ export async function crearRetencion(input: RetencionInput): Promise<RetencionAc
       return { ok: false, error: `Ya existe una retención para ${periodoLabel(periodo)}.`, field: 'periodo' }
     }
 
-    const retencion = parseMoneyInput(input.retencionMensual)
+    const sueldoNum = parseMoneyInput(input.sueldo)
+    const refrigerioNum = parseMoneyInput(input.refrigerio)
+    let retencion = parseMoneyInput(input.retencionMensual)
+    if (retencion === 0 && (sueldoNum > 0 || refrigerioNum > 0)) {
+      retencion = roundMoney(sueldoNum + refrigerioNum)
+    }
     const devolucion = parseMoneyInput(input.devolucion)
     if (retencion < 0) return { ok: false, error: 'La retención no puede ser negativa.', field: 'retencionMensual' }
     if (devolucion < 0) return { ok: false, error: 'La devolución no puede ser negativa.', field: 'devolucion' }

@@ -269,10 +269,51 @@ export function formatMoney(value: number | null | undefined, withSymbol = true)
   return withSymbol ? `$ ${formatted}` : formatted
 }
 
+export function formatMoneyTyping(input: string): string {
+  if (!input) return ''
+  let normalized = input.trim()
+  if (!normalized.includes(',') && normalized.endsWith('.')) {
+    normalized = normalized.slice(0, -1) + ','
+  }
+  const clean = normalized.replace(/[^\d,]/g, '')
+  if (!clean) return ''
+
+  let integerRaw = ''
+  let decimalRaw = ''
+  if (clean.includes(',')) {
+    const parts = clean.split(',')
+    integerRaw = parts[0]
+    decimalRaw = parts.slice(1).join('')
+  } else {
+    integerRaw = clean
+  }
+
+  const integerDigits = integerRaw.replace(/\D/g, '')
+  if (!integerDigits && !clean.includes(',')) return ''
+
+  let formattedInteger = ''
+  if (integerDigits) {
+    try {
+      formattedInteger = BigInt(integerDigits).toLocaleString('es-AR')
+    } catch {
+      formattedInteger = integerDigits
+    }
+  } else {
+    formattedInteger = '0'
+  }
+
+  if (clean.includes(',')) {
+    const decimalDigits = decimalRaw.replace(/\D/g, '').slice(0, 2)
+    return formattedInteger + ',' + decimalDigits
+  }
+
+  return formattedInteger
+}
+
 export function moneyToInput(value: number | null | undefined): string {
   const amount = Number(value ?? 0)
   if (!Number.isFinite(amount) || amount === 0) return ''
-  return amount.toFixed(2).replace('.', ',')
+  return formatMoneyTyping(amount.toFixed(2).replace('.', ','))
 }
 
 export function roundMoney(value: number): number {

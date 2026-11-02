@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import { AlertCircle, CheckCircle2, Info, Loader2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { formatMoney, getEstadoConfig } from '@/lib/embargos'
+import { formatMoney, formatMoneyTyping, getEstadoConfig } from '@/lib/embargos'
 
 export function EstadoBadge({ estado, compact = false }: { estado: string; compact?: boolean }) {
   const config = getEstadoConfig(estado)
@@ -267,7 +267,7 @@ export function MoneyField({
           type="text"
           inputMode="decimal"
           value={value}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => onChange(formatMoneyTyping(event.target.value))}
           placeholder={placeholder ?? '0,00'}
           disabled={disabled}
           autoComplete="off"

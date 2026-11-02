@@ -255,7 +255,13 @@ function agenteDe(id: number): Empleado | undefined {
 
 function mapEmbargo(m: MockEmbargo): Embargo {
   const retenciones = [...m.retenciones].sort((a, b) => a.periodo.localeCompare(b.periodo))
-  const totalRetenido = roundMoney(retenciones.reduce((acc, r) => acc + r.retencionMensual, 0))
+  const totalRetenido = roundMoney(
+    retenciones.reduce((acc, r) => {
+      const mensual = r.retencionMensual
+      const desglose = roundMoney((r.sueldo || 0) + (r.refrigerio || 0))
+      return acc + (mensual > 0 ? mensual : desglose)
+    }, 0)
+  )
   const totalDevuelto = roundMoney(retenciones.reduce((acc, r) => acc + r.devolucion, 0))
   const ultima = retenciones[retenciones.length - 1]
   const saldoActual = ultima ? ultima.saldo : roundMoney(m.deuda - totalRetenido + totalDevuelto)
@@ -329,7 +335,10 @@ function recalcularSaldosMock(idEmbargo: number): number | null {
   if (!m) return null
   let saldo = m.deuda
   for (const r of m.retenciones.sort((a, b) => a.periodo.localeCompare(b.periodo))) {
-    saldo = roundMoney(saldo - r.retencionMensual + r.devolucion)
+    const mensual = r.retencionMensual
+    const desglose = roundMoney((r.sueldo || 0) + (r.refrigerio || 0))
+    const efectiva = mensual > 0 ? mensual : desglose
+    saldo = roundMoney(saldo - efectiva + r.devolucion)
     r.saldo = saldo
   }
   if (saldo <= 0 && (m.estado === 'ACTIVO' || m.estado === 'ESPERA')) {

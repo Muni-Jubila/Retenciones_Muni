@@ -134,13 +134,33 @@ function RetencionForm({
   const [retencion, setRetencion] = useState(
     initial ? moneyToInput(initial.retencionMensual) : moneyToInput(embargo.importeMensual || saldoBase),
   )
-  const [devolucion, setDevolucion] = useState(initial ? moneyToInput(initial.devolucion) : '')
-  const [observaciones, setObservaciones] = useState(initial?.observaciones ?? '')
+
+  const handleSueldoChange = (val: string) => {
+    setSueldo(val)
+    const s = parseMoneyInput(val)
+    const r = parseMoneyInput(refrigerio)
+    const total = roundMoney(s + r)
+    setRetencion(moneyToInput(total))
+  }
+
+  const handleRefrigerioChange = (val: string) => {
+    setRefrigerio(val)
+    const s = parseMoneyInput(sueldo)
+    const r = parseMoneyInput(val)
+    const total = roundMoney(s + r)
+    setRetencion(moneyToInput(total))
+  }
+
+  const handleRetencionChange = (val: string) => {
+    setRetencion(val)
+    if (!refrigerio || parseMoneyInput(refrigerio) === 0) {
+      setSueldo(val)
+    }
+  }
 
   const retencionNum = parseMoneyInput(retencion)
-  const devolucionNum = parseMoneyInput(devolucion)
-  const saldoResultante = roundMoney(saldoBase - retencionNum + devolucionNum)
-  const excedeSaldo = retencionNum > saldoBase + devolucionNum
+  const saldoResultante = roundMoney(saldoBase - retencionNum)
+  const excedeSaldo = retencionNum > saldoBase
 
   return (
     <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
@@ -156,31 +176,27 @@ function RetencionForm({
 
       {error && <div className="mb-2"><Banner tone="error">{error}</Banner></div>}
 
-      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-4">
         <TextField label="Período" value={periodo} onChange={setPeriodo} type="month" />
-        <MoneyField label="Sueldo" value={sueldo} onChange={setSueldo} />
-        <MoneyField label="Refrigerio" value={refrigerio} onChange={setRefrigerio} />
-        <MoneyField label="Retención mensual" value={retencion} onChange={setRetencion} />
-        <MoneyField label="Devolución" value={devolucion} onChange={setDevolucion} />
-      </div>
-      <div className="mt-2 grid grid-cols-1 gap-2.5 md:grid-cols-[1fr_auto]">
-        <TextField label="Observaciones" value={observaciones} onChange={setObservaciones} placeholder="Opcional" maxLength={500} />
-        <div className="flex flex-col justify-end">
-          <div
-            className={`rounded-md border px-3 py-1.5 text-right text-xs ${
-              excedeSaldo ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-            }`}
-          >
-            <span className="block text-[9px] font-bold uppercase tracking-wider opacity-70">Saldo resultante</span>
-            <span className="font-mono font-bold">{formatMoney(Math.max(saldoResultante, 0))}</span>
-          </div>
-        </div>
+        <MoneyField label="Ret. Sueldo" value={sueldo} onChange={handleSueldoChange} placeholder="0,00" />
+        <MoneyField label="Ret. Refrigerio" value={refrigerio} onChange={handleRefrigerioChange} placeholder="0,00" />
+        <MoneyField label="Retención mensual" value={retencion} onChange={handleRetencionChange} placeholder="0,00" />
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[10px] text-slate-500">
-          Saldo disponible: <span className="font-mono font-bold text-slate-700">{formatMoney(saldoBase)}</span>. El servidor recalcula todos los saldos al guardar.
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-[10px] text-slate-500">
+            Saldo disponible: <span className="font-mono font-bold text-slate-700">{formatMoney(saldoBase)}</span>.
+          </p>
+          <div
+            className={`rounded-md border px-2.5 py-1 text-right text-xs ${
+              excedeSaldo ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            }`}
+          >
+            <span className="text-[9px] font-bold uppercase tracking-wider opacity-70 mr-1.5">Saldo resultante:</span>
+            <span className="font-mono font-bold">{formatMoney(Math.max(saldoResultante, 0))}</span>
+          </div>
+        </div>
         <div className="flex gap-2">
           <button
             type="button"
@@ -193,7 +209,7 @@ function RetencionForm({
           <button
             type="button"
             disabled={saving || !periodo}
-            onClick={() => onSubmit({ periodo, sueldo, refrigerio, retencionMensual: retencion, devolucion, observaciones })}
+            onClick={() => onSubmit({ periodo, sueldo, refrigerio, retencionMensual: retencion, devolucion: '0', observaciones: '' })}
             className="flex items-center gap-1.5 rounded-lg bg-[#1e3a8a] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#172554] disabled:opacity-60"
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
@@ -691,7 +707,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                 <button
                   type="button"
                   onClick={openNuevo}
-                  className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-600"
+                  className="flex items-center gap-1.5 rounded-lg bg-[#1e3a8a] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#172554]"
                 >
                   <FilePlus2 className="h-3.5 w-3.5" />
                   Nuevo embargo
@@ -1024,12 +1040,10 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                           <tr>
                             <th className="w-9 px-2 py-2 text-center">M</th>
                             <th className="px-3 py-2 text-left">Mes Ret.</th>
-                            <th className="px-3 py-2 text-right">Refrig.</th>
-                            <th className="px-3 py-2 text-right">Sueldo</th>
+                            <th className="px-3 py-2 text-right">Ret. Refrig.</th>
+                            <th className="px-3 py-2 text-right">Ret. Sueldo</th>
                             <th className="px-3 py-2 text-right">R. Mensual</th>
                             <th className="px-3 py-2 text-right">Saldo</th>
-                            <th className="px-3 py-2 text-right">Dev.</th>
-                            <th className="px-3 py-2 text-left">Observaciones</th>
                             <th className="w-16 px-2 py-2 text-center print:hidden">Acc.</th>
                           </tr>
                         </thead>
@@ -1044,10 +1058,8 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                               <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-700">{periodoLabel(retencion.periodo)}</td>
                               <td className="whitespace-nowrap px-3 py-2 text-right"><Money value={retencion.refrigerio} /></td>
                               <td className="whitespace-nowrap px-3 py-2 text-right"><Money value={retencion.sueldo} /></td>
-                              <td className="whitespace-nowrap px-3 py-2 text-right font-bold text-[#1e3a8a]"><Money value={retencion.retencionMensual} /></td>
+                              <td className="whitespace-nowrap px-3 py-2 text-right font-bold text-[#1e3a8a]"><Money value={retencion.retencionMensual > 0 ? retencion.retencionMensual : roundMoney(retencion.sueldo + retencion.refrigerio)} /></td>
                               <td className="whitespace-nowrap px-3 py-2 text-right font-bold text-rose-600"><Money value={retencion.saldo} /></td>
-                              <td className="whitespace-nowrap px-3 py-2 text-right"><Money value={retencion.devolucion} /></td>
-                              <td className="max-w-[220px] truncate px-3 py-2 text-slate-500" title={retencion.observaciones}>{retencion.observaciones || '—'}</td>
                               <td className="px-2 py-2 print:hidden">
                                 <div className="flex items-center justify-center gap-1">
                                   <button
@@ -1073,11 +1085,12 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                         </tbody>
                         <tfoot className="bg-slate-50 text-[10px] font-bold text-slate-600">
                           <tr>
-                            <td colSpan={4} className="px-3 py-2 text-right uppercase tracking-wider">Totales</td>
+                            <td colSpan={2} className="px-3 py-2 text-right uppercase tracking-wider">Totales</td>
+                            <td className="px-3 py-2 text-right"><Money value={roundMoney(retenciones.reduce((acc, r) => acc + (r.refrigerio || 0), 0))} /></td>
+                            <td className="px-3 py-2 text-right"><Money value={roundMoney(retenciones.reduce((acc, r) => acc + (r.sueldo || 0), 0))} /></td>
                             <td className="px-3 py-2 text-right"><Money value={selected.totalRetenido} /></td>
                             <td className="px-3 py-2 text-right"><Money value={selected.saldoActual} /></td>
-                            <td className="px-3 py-2 text-right"><Money value={selected.totalDevuelto} /></td>
-                            <td colSpan={2} />
+                            <td className="print:hidden" />
                           </tr>
                         </tfoot>
                       </table>

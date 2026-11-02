@@ -374,14 +374,19 @@ function extractTribunal(text: string): string {
 }
 
 function cleanNombreJuez(value: string): string {
-  return cleanSpaces(
-    value
-      .replace(/^(?:texto\s+)?firmado\s+digitalmente\s+por\s*:\s*/i, '')
-      .replace(/^(?:fdo\.?|firmado)\s*:?\s*/i, '')
-      .replace(/\s*(?:\(|\[)?(?:JUEZ\/A|JUEZA?|PROSECRETARIO\/A|SECRETARIO\/A)[^)\]]*\)?\s*$/i, '')
-      .replace(/[—–-]+\s*$/g, '')
-      .replace(/^[\s:;,.-]+|[\s:;,.-]+$/g, ''),
-  )
+  let cleaned = value
+    .replace(/^(?:texto\s+)?firmado\s+(?:digitalmente|electr[oó]nicamente)?\s*(?:por)?\s*:\s*/i, '')
+    .replace(/^(?:fdo\.?|firmado)\s*:?\s*/i, '')
+    .replace(/^(?:dr|dra)\.?\s+/i, '')
+    .replace(/\s*\([^)]*(?:cuil|cuit|dni|\d)[^)]*\)/gi, '')
+    .replace(/(?:fecha|el)?\s*[:\-–—]?\s*\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?.*$/i, '')
+    .replace(/(?:cuil|cuit|dni)?\s*[:\-–—]?\s*\d{2}[\s.-]?\d{7,8}[\s.-]?\d?.*$/i, '')
+    .replace(/\s*\([^)]*\)\s*$/g, '')
+    .replace(/\s*(?:\(|\[)?(?:JUEZ\/A|JUEZA?|PROSECRETARIO\/A|SECRETARIO\/A|VOCAL|MAGISTRAD[OA])[^)\]]*\)?\s*$/i, '')
+    .replace(/[—–-]+.*$/g, '')
+    .replace(/^[\s:;,.-]+|[\s:;,.-]+$/g, '')
+    .trim()
+  return cleanSpaces(cleaned)
 }
 
 function esNombreJuezPlausible(value: string): boolean {
@@ -483,7 +488,7 @@ function extractJuezNombre(rawText: string): string {
  */
 function extractUltimoFirmante(rawText: string): string {
   const text = normalize(rawText)
-  const pattern = /(?:texto\s+)?firmado\s+digitalmente\s+por\s*:\s*([^\n]+)/gi
+  const pattern = /(?:texto\s+)?firmado\s+(?:digitalmente|electr[oó]nicamente)?\s*(?:por)?\s*:\s*([^\n\r]+)/gi
   let match: RegExpExecArray | null
   let ultimo = ''
 
@@ -493,10 +498,25 @@ function extractUltimoFirmante(rawText: string): string {
   }
   if (ultimo) return ultimo
 
-  const fdo = text.match(/(?:^|\n)\s*(?:Fdo\.?|Firmado)\s*:?\s*([^\n]{3,80})\s*$/i)
+  const fdo = text.match(/(?:^|\n)\s*(?:Fdo\.?|Firmado(?:\s+digitalmente)?)\s*:?\s*([^\n\r]{3,100})/i)
   if (fdo) {
     const nombre = cleanNombreJuez(fdo[1])
     if (esNombreJuezPlausible(nombre)) return nombre
+  }
+
+  // Buscar en las últimas líneas del documento la persona firmante
+  const lines = text.split('\n').map((l) => cleanSpaces(l)).filter(Boolean)
+  const tailLines = lines.slice(-15)
+  for (let i = tailLines.length - 1; i >= 0; i--) {
+    const line = tailLines[i]
+    if (/(?:firmad[oa]|fdo|firma)/i.test(line)) {
+      const candidate = cleanNombreJuez(line)
+      if (esNombreJuezPlausible(candidate)) return candidate
+      if (tailLines[i + 1]) {
+        const nextCandidate = cleanNombreJuez(tailLines[i + 1])
+        if (esNombreJuezPlausible(nextCandidate)) return nextCandidate
+      }
+    }
   }
 
   return ''

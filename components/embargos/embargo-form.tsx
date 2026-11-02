@@ -297,7 +297,7 @@ export default function EmbargoForm({
           type="button"
           onClick={handleSubmit}
           disabled={saving}
-          className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+          className="flex items-center gap-1.5 rounded-lg bg-[#1e3a8a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#172554] disabled:opacity-60"
         >
           <Save className="h-3.5 w-3.5" />
           {saving ? 'Guardando...' : initial ? 'Guardar cambios' : 'Crear embargo'}
