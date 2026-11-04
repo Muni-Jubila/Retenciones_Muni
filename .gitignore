@@ -23,3 +23,6 @@ dev-server-error.log
 muni-dev.log
 # Oficios judiciales de ejemplo (contienen datos personales; no se versionan)
 /pdf/
+# Planillas de liquidación de ejemplo (datos personales; no se versionan)
+/*.xlsx
+/*.xlsm

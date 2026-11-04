@@ -6,8 +6,9 @@ const nextConfig = {
     unoptimized: true,
   },
   // pdf.js (usado por unpdf) debe ejecutarse en Node: si se empaqueta, falla al
-  // resolver sus assets y workers internos.
-  serverExternalPackages: ['unpdf'],
+  // resolver sus assets y workers internos. ExcelJS también se usa sólo en el
+  // servidor para leer la planilla de liquidación.
+  serverExternalPackages: ['unpdf', 'exceljs'],
   experimental: {
     serverActions: {
       // Los oficios en PDF se envían como data URL; 6 MB de PDF equivalen a
