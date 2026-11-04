@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   BadgeCheck,
+  Ban,
   CalendarClock,
   CalendarPlus,
   CheckCircle2,
@@ -60,6 +61,7 @@ import {
 } from '@/components/embargos/ui'
 import EmbargoForm from '@/components/embargos/embargo-form'
 import ImportarOficio, { type ArchivoOficio } from '@/components/embargos/importar-oficio'
+import ConsultaEmbargo from '@/components/embargos/consulta-embargo'
 import type { DatosOficio } from '@/lib/oficio-parser'
 
 interface FichaAgenteProps {
@@ -72,6 +74,14 @@ type Modo = 'ver' | 'nuevo' | 'editar'
 interface OficioImportado {
   datos: DatosOficio
   archivo: ArchivoOficio
+}
+
+interface RetencionFormInput {
+  periodo: string
+  retencionSueldo: string
+  retencionRefrigerio: string
+  devolucion: string
+  observaciones: string
 }
 
 /** Convierte los datos detectados en el PDF a valores del formulario de embargo. */
@@ -121,13 +131,7 @@ function RetencionForm({
   saving: boolean
   error?: string | null
   onCancel: () => void
-  onSubmit: (input: {
-    periodo: string
-    retencionSueldo: string
-    retencionRefrigerio: string
-    devolucion: string
-    observaciones: string
-  }) => void
+  onSubmit: (input: RetencionFormInput) => void
 }) {
   const calcularSaldo = (periodoConsulta: string) =>
     roundMoney(
@@ -387,9 +391,14 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
 
   const [estadoConfirm, setEstadoConfirm] = useState<{ id: number; estado: EstadoEmbargo } | null>(null)
   const [motivoEstado, setMotivoEstado] = useState('')
+  const [confirmarCancelacion, setConfirmarCancelacion] = useState(false)
   const [embargoDelete, setEmbargoDelete] = useState<number | null>(null)
   const [retencionDelete, setRetencionDelete] = useState<number | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
+  const [consultaOpen, setConsultaOpen] = useState(false)
+  const [confirmEmbargo, setConfirmEmbargo] = useState<EmbargoInput | null>(null)
+  const [confirmRetencion, setConfirmRetencion] = useState<RetencionFormInput | null>(null)
+  const [successDialog, setSuccessDialog] = useState<{ title: string; message: string } | null>(null)
 
   // Importación de oficios judiciales en PDF.
   const [prefillOficio, setPrefillOficio] = useState<Partial<EmbargoInput> | null>(null)
@@ -559,7 +568,12 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
       setPrefillOficio(null)
       setOficioAdjunto(null)
       setOficioPendiente(null)
-      setNotice(modo === 'editar' ? 'Embargo modificado correctamente.' : 'Embargo creado correctamente.')
+      const mensaje = modo === 'editar' ? 'El embargo se modificó correctamente.' : 'El embargo se creó correctamente.'
+      setNotice(mensaje)
+      setSuccessDialog({
+        title: modo === 'editar' ? 'Cambios guardados' : 'Embargo creado',
+        message: mensaje,
+      })
       await recargarEmbargos(agente.id, resultado.embargo?.id)
       setRefreshKey((key) => key + 1)
     } catch {
@@ -582,7 +596,10 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
         setError(resultado.error ?? 'No se pudo cambiar el estado.')
         return
       }
-      setNotice(`Estado actualizado a ${ESTADOS_EMBARGO.find((item) => item.value === estadoConfirm.estado)?.label}.`)
+      const estadoLabel = ESTADOS_EMBARGO.find((item) => item.value === estadoConfirm.estado)?.label
+      const mensaje = `Estado actualizado a ${estadoLabel}.`
+      setNotice(mensaje)
+      setSuccessDialog({ title: 'Estado actualizado', message: mensaje })
       if (agente) await recargarEmbargos(agente.id, estadoConfirm.id)
       setRefreshKey((key) => key + 1)
     } catch {
@@ -591,6 +608,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
       setActionLoading(false)
       setEstadoConfirm(null)
       setMotivoEstado('')
+      setConfirmarCancelacion(false)
     }
   }
 
@@ -604,6 +622,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
         return
       }
       setNotice('Embargo eliminado del registro.')
+      setSuccessDialog({ title: 'Embargo eliminado', message: 'El embargo se eliminó correctamente.' })
       setModo('ver')
       setSelectedId(null)
       await recargarEmbargos(agente.id)
@@ -643,13 +662,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
     setShowRetencionForm(true)
   }
 
-  const handleSaveRetencion = async (input: {
-    periodo: string
-    retencionSueldo: string
-    retencionRefrigerio: string
-    devolucion: string
-    observaciones: string
-  }) => {
+  const handleSaveRetencion = async (input: RetencionFormInput) => {
     if (!selected || !agente) return
     setSavingRetencion(true)
     setRetencionError(null)
@@ -665,7 +678,12 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
 
       setShowRetencionForm(false)
       setRetencionEdit(null)
-      setNotice(retencionEdit ? 'Retención modificada correctamente.' : 'Retención registrada correctamente.')
+      const mensaje = retencionEdit ? 'La retención se modificó correctamente.' : 'La retención se registró correctamente.'
+      setNotice(mensaje)
+      setSuccessDialog({
+        title: retencionEdit ? 'Cambios guardados' : 'Retención registrada',
+        message: mensaje,
+      })
       await recargarEmbargos(agente.id, selected.id)
       setRefreshKey((key) => key + 1)
     } catch {
@@ -685,6 +703,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
         return
       }
       setNotice('Retención eliminada y saldos recalculados.')
+      setSuccessDialog({ title: 'Retención eliminada', message: 'La retención se eliminó y los saldos se recalcularon.' })
       await recargarEmbargos(agente.id, selected.id)
       setRefreshKey((key) => key + 1)
     } catch {
@@ -803,10 +822,12 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                   {(agente.apellido || agente.nombre || '?').slice(0, 1)}
                 </div>
                 <div>
-                  <h2 className="text-base font-bold leading-tight">{agente.nombreCompleto}</h2>
-                  <p className="text-[11px] text-blue-200">
-                    DNI {agente.dni || '—'} · CUIL {agente.cuil || '—'} · {agente.programa || 'Sin programa'} · Cargo {agente.cargo || '—'}
-                  </p>
+                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <h2 className="text-base font-bold leading-tight">{agente.nombreCompleto}</h2>
+                    <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-blue-100">
+                      DNI {agente.dni || '—'}
+                    </span>
+                  </div>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2 print:hidden">
@@ -821,11 +842,11 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                 </span>
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => setConsultaOpen(true)}
                   className="flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20"
                 >
                   <Printer className="h-3.5 w-3.5" />
-                  Imprimir
+                  Consulta Embargo
                 </button>
                 <button
                   type="button"
@@ -838,10 +859,10 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 px-4 py-3 text-xs md:grid-cols-4">
+              <DetailItem label="CUIL" value={agente.cuil} />
               <DetailItem label="Repartición" value={agente.secretaria} />
               <DetailItem label="Programa" value={agente.programa} />
               <DetailItem label="Cargo" value={agente.cargo} />
-              <DetailItem label="Antigüedad" value={agente.antiguedadRecibo} />
             </div>
           </div>
 
@@ -886,7 +907,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                 setPrefillOficio(null)
                 setOficioAdjunto(null)
               }}
-              onSubmit={(input) => void handleSaveEmbargo(input)}
+              onSubmit={(input) => setConfirmEmbargo(input)}
             />
           )}
 
@@ -936,7 +957,6 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                 <table className="w-full min-w-[980px] text-xs">
                   <thead className="bg-slate-100 text-[9px] uppercase tracking-wider text-slate-500">
                     <tr>
-                      <th className="w-10 px-2 py-2 text-center">M</th>
                       <th className="px-3 py-2 text-left">Autos</th>
                       <th className="px-3 py-2 text-left">Exp. Judicial</th>
                       <th className="px-3 py-2 text-left">Exp. Retenciones</th>
@@ -960,15 +980,6 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                           }}
                           className={`cursor-pointer transition ${activo ? 'bg-blue-50/80' : 'hover:bg-slate-50'}`}
                         >
-                          <td className="px-2 py-2 text-center">
-                            <span
-                              className={`inline-flex h-5 w-5 items-center justify-center rounded text-[10px] font-black ${
-                                activo ? 'bg-[#1e3a8a] text-white' : 'bg-slate-100 text-slate-600'
-                              }`}
-                            >
-                              {ESTADOS_EMBARGO.find((item) => item.value === embargo.estado)?.letra ?? '?'}
-                            </span>
-                          </td>
                           <td className="max-w-[260px] truncate px-3 py-2 font-semibold text-slate-800" title={embargo.autos}>
                             {embargo.autos || '—'}
                           </td>
@@ -1012,21 +1023,18 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 print:hidden">
                     {(selected.estado === 'ACTIVO' || selected.estado === 'ESPERA') && (
-                      <select
-                        value=""
-                        onChange={(event) => {
-                          const estado = event.target.value as EstadoEmbargo
-                          if (estado === 'CANCELADO') {
-                            setMotivoEstado('')
-                            setEstadoConfirm({ id: selected.id, estado })
-                          }
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMotivoEstado('')
+                          setEstadoConfirm({ id: selected.id, estado: 'CANCELADO' })
                         }}
-                        className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-700 focus:border-[#1e3a8a] focus:outline-none"
+                        className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100"
                         title="Cancelar el embargo"
                       >
-                        <option value="">Cancelar embargo...</option>
-                        <option value="CANCELADO">C · Cancelado</option>
-                      </select>
+                        <Ban className="h-3 w-3" />
+                        Cancelar
+                      </button>
                     )}
                     <button
                       type="button"
@@ -1140,7 +1148,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                         setRetencionEdit(null)
                         setRetencionError(null)
                       }}
-                      onSubmit={(input) => void handleSaveRetencion(input)}
+                      onSubmit={(input) => setConfirmRetencion(input)}
                     />
                   )}
 
@@ -1226,7 +1234,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
       )}
 
       <ConfirmDialog
-        open={Boolean(estadoConfirm)}
+        open={Boolean(estadoConfirm) && !confirmarCancelacion}
         title="Cancelar embargo"
         description={
           estadoConfirm ? (
@@ -1241,8 +1249,9 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
         onCancel={() => {
           setEstadoConfirm(null)
           setMotivoEstado('')
+          setConfirmarCancelacion(false)
         }}
-        onConfirm={() => void handleConfirmEstado()}
+        onConfirm={() => setConfirmarCancelacion(true)}
       >
         {estadoConfirm && (
           <div className="mt-3">
@@ -1273,6 +1282,30 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
       </ConfirmDialog>
 
       <ConfirmDialog
+        open={Boolean(estadoConfirm) && confirmarCancelacion}
+        title="Confirmar cancelación"
+        description={
+          estadoConfirm ? (
+            <>
+              ¿Deseás proseguir con la cancelación del embargo{' '}
+              <strong>{selected?.expediente || 'seleccionado'}</strong>?
+              {motivoEstado.trim() && (
+                <>
+                  <br />
+                  Motivo: <strong>{motivoEstado.trim()}</strong>
+                </>
+              )}
+            </>
+          ) : ''
+        }
+        confirmLabel="Sí, cancelar embargo"
+        danger
+        loading={actionLoading}
+        onCancel={() => setConfirmarCancelacion(false)}
+        onConfirm={() => void handleConfirmEstado()}
+      />
+
+      <ConfirmDialog
         open={embargoDelete !== null}
         title="Eliminar embargo"
         description="El embargo se quitará de la ficha y de las consultas. Las retenciones históricas quedarán asociadas al registro eliminado. Esta acción no se puede deshacer desde la pantalla."
@@ -1293,6 +1326,58 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
         onCancel={() => setRetencionDelete(null)}
         onConfirm={() => void handleDeleteRetencion()}
       />
+
+      <ConfirmDialog
+        open={confirmEmbargo !== null}
+        title={modo === 'editar' ? 'Guardar cambios del embargo' : 'Crear nuevo embargo'}
+        description="¿Confirmás que querés guardar los datos cargados?"
+        confirmLabel="Sí, guardar"
+        loading={saving}
+        onCancel={() => setConfirmEmbargo(null)}
+        onConfirm={() => {
+          const input = confirmEmbargo
+          setConfirmEmbargo(null)
+          if (input) void handleSaveEmbargo(input)
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmRetencion !== null}
+        title={retencionEdit ? 'Guardar cambios de la retención' : 'Registrar retención'}
+        description={
+          confirmRetencion
+            ? `Período ${periodoLabel(confirmRetencion.periodo)}. ¿Confirmás la operación?`
+            : ''
+        }
+        confirmLabel="Sí, guardar"
+        loading={savingRetencion}
+        onCancel={() => setConfirmRetencion(null)}
+        onConfirm={() => {
+          const input = confirmRetencion
+          setConfirmRetencion(null)
+          if (input) void handleSaveRetencion(input)
+        }}
+      />
+
+      <ConfirmDialog
+        open={successDialog !== null}
+        title={successDialog?.title ?? ''}
+        description={successDialog?.message ?? ''}
+        confirmLabel="Aceptar"
+        hideCancel
+        onCancel={() => setSuccessDialog(null)}
+        onConfirm={() => setSuccessDialog(null)}
+      />
+
+      {agente && (
+        <ConsultaEmbargo
+          open={consultaOpen}
+          agente={agente}
+          embargos={embargos}
+          selected={selected}
+          onClose={() => setConsultaOpen(false)}
+        />
+      )}
     </div>
   )
 }
