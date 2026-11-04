@@ -130,23 +130,48 @@ function RetencionForm({
     salarioMinimo: string
   }) => void
 }) {
+  const saldoDisponible = Math.max(roundMoney(saldoBase), 0)
+  const retencionInicial = initial
+    ? Math.min(initial.retencionMensual || roundMoney(initial.sueldo + initial.refrigerio), saldoDisponible)
+    : 0
+
   const [periodo, setPeriodo] = useState(initial?.periodo ?? periodoActual())
   const [sueldo, setSueldo] = useState(initial ? moneyToInput(initial.sueldo) : '')
   const [refrigerio, setRefrigerio] = useState(initial ? moneyToInput(initial.refrigerio) : '')
   const [salarioMinimo, setSalarioMinimo] = useState(
     initial?.salarioMinimo ? moneyToInput(initial.salarioMinimo) : moneyToInput(SALARIO_MINIMO_DEFAULT),
   )
-  const [retencion, setRetencion] = useState(
-    initial
-      ? moneyToInput(initial.retencionMensual || roundMoney(initial.sueldo + initial.refrigerio))
-      : '',
-  )
+  const [retencion, setRetencion] = useState(initial ? moneyToInput(retencionInicial) : '')
+  const [ajustada, setAjustada] = useState(Boolean(initial && retencionInicial < (initial.retencionMensual || 0)))
+  const [errores, setErrores] = useState<Record<string, string>>({})
+
+  /** Aplica el tope del saldo pendiente al importe que se intenta retener. */
+  const aplicarTope = (valor: string) => {
+    const numero = parseMoneyInput(valor)
+    if (numero > saldoDisponible) {
+      setAjustada(true)
+      return moneyToInput(saldoDisponible)
+    }
+    setAjustada(false)
+    return valor
+  }
 
   // Recalcula la retención a partir de los haberes; el operador puede
   // ajustarla a mano después de escribir sueldo y refrigerio.
   const recalcularRetencion = (s: string, r: string, minimo: string) => {
     const calc = calcularRetencionHaberes(parseMoneyInput(s), parseMoneyInput(r), parseMoneyInput(minimo))
-    setRetencion(calc.retencionMensual > 0 ? moneyToInput(calc.retencionMensual) : '')
+    if (calc.retencionMensual > 0) {
+      setRetencion(aplicarTope(moneyToInput(calc.retencionMensual)))
+    } else {
+      setRetencion('')
+      setAjustada(false)
+    }
+    setErrores((prev) => {
+      if (!prev.retencionMensual) return prev
+      const next = { ...prev }
+      delete next.retencionMensual
+      return next
+    })
   }
 
   const handleSueldoChange = (val: string) => {
@@ -164,10 +189,48 @@ function RetencionForm({
     recalcularRetencion(sueldo, refrigerio, val)
   }
 
+  const handleRetencionChange = (val: string) => {
+    setRetencion(aplicarTope(val))
+    setErrores((prev) => {
+      if (!prev.retencionMensual) return prev
+      const next = { ...prev }
+      delete next.retencionMensual
+      return next
+    })
+  }
+
   const calc = calcularRetencionHaberes(parseMoneyInput(sueldo), parseMoneyInput(refrigerio), parseMoneyInput(salarioMinimo))
-  const retencionNum = parseMoneyInput(retencion)
-  const saldoResultante = roundMoney(saldoBase - retencionNum)
-  const excedeSaldo = retencionNum > saldoBase
+  const retencionNum = Math.min(parseMoneyInput(retencion), saldoDisponible)
+  const devolucionActual = initial?.devolucion ?? 0
+  const saldoResultante = roundMoney(Math.max(saldoDisponible - retencionNum + devolucionActual, 0))
+
+  const handleGuardar = () => {
+    const next: Record<string, string> = {}
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo.trim())) {
+      next.periodo = 'Seleccioná un período válido.'
+    }
+    if (!salarioMinimo.trim() || parseMoneyInput(salarioMinimo) <= 0) {
+      next.salarioMinimo = 'Ingresá un salario mínimo válido.'
+    }
+    if (saldoDisponible <= 0) {
+      next.retencionMensual = 'El embargo no tiene saldo pendiente para retener.'
+    } else if (retencionNum <= 0) {
+      next.retencionMensual = 'Ingresá un importe de retención mayor a cero.'
+    }
+    setErrores(next)
+    if (Object.keys(next).length > 0) return
+
+    onSubmit({
+      periodo,
+      sueldo,
+      refrigerio,
+      retencionMensual: moneyToInput(retencionNum),
+      // Se conservan los valores que no se editan en esta pantalla.
+      devolucion: initial ? String(initial.devolucion) : '0',
+      observaciones: initial?.observaciones ?? '',
+      salarioMinimo,
+    })
+  }
 
   return (
     <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
@@ -184,17 +247,51 @@ function RetencionForm({
       {error && <div className="mb-2"><Banner tone="error">{error}</Banner></div>}
 
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
-        <TextField label="Período" value={periodo} onChange={setPeriodo} type="month" />
-        <MoneyField label="Sueldo" value={sueldo} onChange={handleSueldoChange} placeholder="0,00" />
-        <MoneyField label="Refrigerio" value={refrigerio} onChange={handleRefrigerioChange} placeholder="0,00" />
+        <TextField
+          label="Período"
+          value={periodo}
+          onChange={(value) => {
+            setPeriodo(value)
+            setErrores((prev) => {
+              if (!prev.periodo) return prev
+              const next = { ...prev }
+              delete next.periodo
+              return next
+            })
+          }}
+          type="month"
+          error={errores.periodo ?? null}
+        />
+        <MoneyField
+          label="Sueldo"
+          value={sueldo}
+          onChange={handleSueldoChange}
+          placeholder="0,00"
+          hint="Solo números y coma decimal (máx. 2 centavos)."
+        />
+        <MoneyField
+          label="Refrigerio"
+          value={refrigerio}
+          onChange={handleRefrigerioChange}
+          placeholder="0,00"
+          hint="Solo números y coma decimal (máx. 2 centavos)."
+        />
         <MoneyField
           label="Salario mínimo"
           value={salarioMinimo}
           onChange={handleSalarioMinimoChange}
           placeholder={moneyToInput(SALARIO_MINIMO_DEFAULT)}
-          hint="Prefijado, se puede editar."
+          hint="Solo números y coma decimal (máx. 2 centavos)."
+          error={errores.salarioMinimo ?? null}
         />
-        <MoneyField label="Retención mensual" value={retencion} onChange={setRetencion} placeholder="0,00" />
+        <MoneyField
+          label="Retención mensual"
+          value={retencion}
+          onChange={handleRetencionChange}
+          placeholder="0,00"
+          hint="Se ajusta automáticamente al saldo pendiente."
+          error={errores.retencionMensual ?? null}
+        />
       </div>
 
       {(calc.retencionMensual > 0 || parseMoneyInput(sueldo) > 0 || parseMoneyInput(refrigerio) > 0) && (
@@ -214,18 +311,24 @@ function RetencionForm({
         </div>
       )}
 
+      {ajustada && (
+        <p className="mt-2 text-[10px] font-semibold text-amber-700">
+          La retención se ajustó al saldo pendiente: {formatMoney(saldoDisponible)}.
+        </p>
+      )}
+
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
           <p className="text-[10px] text-slate-500">
-            Saldo disponible: <span className="font-mono font-bold text-slate-700">{formatMoney(saldoBase)}</span>.
+            Saldo disponible: <span className="font-mono font-bold text-slate-700">{formatMoney(saldoDisponible)}</span>.
           </p>
           <div
             className={`rounded-md border px-2.5 py-1 text-right text-xs ${
-              excedeSaldo ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              ajustada ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
             }`}
           >
             <span className="text-[9px] font-bold uppercase tracking-wider opacity-70 mr-1.5">Saldo resultante:</span>
-            <span className="font-mono font-bold">{formatMoney(Math.max(saldoResultante, 0))}</span>
+            <span className="font-mono font-bold">{formatMoney(saldoResultante)}</span>
           </div>
         </div>
         <div className="flex gap-2">
@@ -239,8 +342,8 @@ function RetencionForm({
           </button>
           <button
             type="button"
-            disabled={saving || !periodo}
-            onClick={() => onSubmit({ periodo, sueldo, refrigerio, retencionMensual: retencion, devolucion: '0', observaciones: '', salarioMinimo })}
+            disabled={saving}
+            onClick={handleGuardar}
             className="flex items-center gap-1.5 rounded-lg bg-[#1e3a8a] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#172554] disabled:opacity-60"
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
@@ -642,23 +745,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
         </p>
       </div>
 
-      {/* Importación de oficios judiciales */}
-      <ImportarOficio
-        onImport={(empleado, datos, archivo) => void handleImportarOficio(empleado, datos, archivo)}
-        onBuscarAgente={handleBuscarAgenteOficio}
-        onQuitar={() => setOficioAdjunto(null)}
-      />
-
-      {sinResultados && (
-        <Banner tone="warning" onClose={() => setSinResultados(false)}>
-          No se encontró ningún agente con ese dato. Probá con el DNI completo o parte del apellido.
-        </Banner>
-      )}
-      {error && <Banner tone="error" onClose={() => setError(null)}>{error}</Banner>}
-      {notice && <Banner tone="success" onClose={() => setNotice(null)}>{notice}</Banner>}
-      {loadingAgent && <LoadingLine text="Cargando agente y embargos..." />}
-
-      {/* Resultados de búsqueda */}
+      {/* Resultados de búsqueda: justo debajo del buscador, antes de la carga de PDF */}
       {resultados.length > 0 && (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2.5">
@@ -693,6 +780,22 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
           </div>
         </div>
       )}
+
+      {/* Importación de oficios judiciales */}
+      <ImportarOficio
+        onImport={(empleado, datos, archivo) => void handleImportarOficio(empleado, datos, archivo)}
+        onBuscarAgente={handleBuscarAgenteOficio}
+        onQuitar={() => setOficioAdjunto(null)}
+      />
+
+      {sinResultados && (
+        <Banner tone="warning" onClose={() => setSinResultados(false)}>
+          No se encontró ningún agente con ese dato. Probá con el DNI completo o parte del apellido.
+        </Banner>
+      )}
+      {error && <Banner tone="error" onClose={() => setError(null)}>{error}</Banner>}
+      {notice && <Banner tone="success" onClose={() => setNotice(null)}>{notice}</Banner>}
+      {loadingAgent && <LoadingLine text="Cargando agente y embargos..." />}
 
       {!agente && !loadingAgent && resultados.length === 0 && (
         <EmptyState
@@ -970,7 +1073,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                   <DetailItem label="Motivo de baja" value={selected.motivoBaja} className="col-span-2" />
 
                   <div className="col-span-2 mt-1 rounded-lg border border-slate-200 bg-slate-50 p-3 md:col-span-4">
-                    <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                       <div>
                         <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Deuda</p>
                         <Money value={selected.deuda} className="text-sm font-bold text-slate-800" />
@@ -982,10 +1085,6 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                       <div>
                         <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Total retenido</p>
                         <Money value={selected.totalRetenido} className="text-sm font-bold text-emerald-700" />
-                      </div>
-                      <div>
-                        <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Devoluciones</p>
-                        <Money value={selected.totalDevuelto} className="text-sm font-bold text-blue-700" />
                       </div>
                       <div>
                         <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Saldo pendiente</p>

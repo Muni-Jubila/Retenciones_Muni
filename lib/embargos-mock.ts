@@ -395,7 +395,7 @@ export async function crearEmbargo(input: EmbargoInput): Promise<{ ok: boolean; 
 
   const nroRetenciones = parseExpedienteRetenciones(input.expedienteRetenciones)
   if (input.expedienteRetenciones.trim() && nroRetenciones === null) {
-    return { ok: false, error: 'El Expediente Retenciones N° debe tener hasta 9 dígitos.', field: 'expedienteRetenciones' }
+    return { ok: false, error: 'El Expediente Retenciones N° debe tener el formato 000.000/00 (máximo 8 dígitos).', field: 'expedienteRetenciones' }
   }
   if (nroRetenciones && mockEmbargos.some((m) => m.nroExpedienteRetenciones === nroRetenciones)) {
     return { ok: false, error: 'Ya existe un embargo con ese N° de expediente de retenciones.', field: 'expedienteRetenciones' }
@@ -447,7 +447,7 @@ export async function actualizarEmbargo(id: number, input: EmbargoInput): Promis
 
   const nroRetenciones = parseExpedienteRetenciones(input.expedienteRetenciones)
   if (input.expedienteRetenciones.trim() && nroRetenciones === null) {
-    return { ok: false, error: 'El Expediente Retenciones N° debe tener hasta 9 dígitos.', field: 'expedienteRetenciones' }
+    return { ok: false, error: 'El Expediente Retenciones N° debe tener el formato 000.000/00 (máximo 8 dígitos).', field: 'expedienteRetenciones' }
   }
   if (nroRetenciones && mockEmbargos.some((e) => e.id !== id && e.nroExpedienteRetenciones === nroRetenciones)) {
     return { ok: false, error: 'Ya existe un embargo con ese N° de expediente de retenciones.', field: 'expedienteRetenciones' }
@@ -568,7 +568,6 @@ export async function crearRetencion(input: RetencionInput): Promise<{ ok: boole
   const devolucion = parseMoneyInput(input.devolucion)
   if (retencion < 0) return { ok: false, error: 'La retención no puede ser negativa.', field: 'retencionMensual' }
   if (devolucion < 0) return { ok: false, error: 'La devolución no puede ser negativa.', field: 'devolucion' }
-  if (retencion === 0 && devolucion === 0) return { ok: false, error: 'Ingrese una retención o una devolución.', field: 'retencionMensual' }
 
   const saldoPrevio = roundMoney(
     [...m.retenciones]
@@ -581,10 +580,16 @@ export async function crearRetencion(input: RetencionInput): Promise<{ ok: boole
         m.deuda,
       ),
   )
-  if (retencion > saldoPrevio + devolucion) {
+  // La retención se ajusta al saldo pendiente, igual que en el modo real.
+  const saldoDisponible = Math.max(saldoPrevio, 0)
+  if (retencion > saldoDisponible) retencion = roundMoney(saldoDisponible)
+  if (retencion === 0 && devolucion === 0) {
     return {
       ok: false,
-      error: `La retención supera el saldo disponible (${saldoPrevio.toFixed(2)}).`,
+      error:
+        saldoDisponible <= 0
+          ? 'El embargo no tiene saldo pendiente para retener.'
+          : 'Ingrese una retención o una devolución.',
       field: 'retencionMensual',
     }
   }
@@ -640,7 +645,6 @@ export async function actualizarRetencion(id: number, input: Omit<RetencionInput
   if (owner.retenciones.some((r) => r.periodo === input.periodo && r.id !== id)) {
     return { ok: false, error: `Ya existe una retención para ${periodoLabel(input.periodo)}.`, field: 'periodo' }
   }
-  found.periodo = input.periodo
   const sueldoNum = parseMoneyInput(input.sueldo)
   const refrigerioNum = parseMoneyInput(input.refrigerio)
   if (sueldoNum < 0 || refrigerioNum < 0) {
@@ -648,14 +652,37 @@ export async function actualizarRetencion(id: number, input: Omit<RetencionInput
   }
   const salarioMinimo = input.salarioMinimo?.trim() ? parseMoneyInput(input.salarioMinimo) : SALARIO_MINIMO_DEFAULT
   if (salarioMinimo < 0) return { ok: false, error: 'El salario mínimo no puede ser negativo.', field: 'salarioMinimo' }
-  const retencion = parseMoneyInput(input.retencionMensual)
+  let retencion = parseMoneyInput(input.retencionMensual)
   if (retencion < 0) return { ok: false, error: 'La retención no puede ser negativa.', field: 'retencionMensual' }
   const devolucion = parseMoneyInput(input.devolucion)
   if (devolucion < 0) return { ok: false, error: 'La devolución no puede ser negativa.', field: 'devolucion' }
+
+  const saldoPrevio = roundMoney(
+    owner.retenciones
+      .filter((r) => r.periodo < input.periodo && r.id !== id)
+      .reduce(
+        (acc, r) =>
+          acc -
+          (r.retencionMensual > 0 ? r.retencionMensual : roundMoney((r.sueldo || 0) + (r.refrigerio || 0))) +
+          r.devolucion,
+        owner.deuda,
+      ),
+  )
+  const saldoDisponible = Math.max(saldoPrevio, 0)
+  if (retencion > saldoDisponible) retencion = roundMoney(saldoDisponible)
   if (retencion === 0 && devolucion === 0) {
-    return { ok: false, error: 'Ingrese una retención o una devolución.', field: 'retencionMensual' }
+    return {
+      ok: false,
+      error:
+        saldoDisponible <= 0
+          ? 'El embargo no tiene saldo pendiente para retener.'
+          : 'Ingrese una retención o una devolución.',
+      field: 'retencionMensual',
+    }
   }
+
   const desglose = repartirRetencion(retencion, sueldoNum, refrigerioNum, salarioMinimo)
+  found.periodo = input.periodo
   found.sueldo = sueldoNum
   found.refrigerio = refrigerioNum
   found.retencionSueldo = desglose.retencionSueldo

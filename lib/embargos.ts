@@ -49,26 +49,45 @@ export function getEstadoConfig(estado: string): EstadoEmbargoConfig {
 }
 
 /**
- * Formatea el N° interno de retenciones con el formato legacy 000.000/000.
+ * Formatea el N° interno de retenciones con el formato 000.000/00.
  * El número es un correlativo que asigna la base al crear el embargo.
+ * Los registros históricos de 9 dígitos se muestran con el formato anterior
+ * (000.000/000) para no perder información.
  */
 export function formatExpedienteRetenciones(numero: number | null | undefined): string {
   const value = Number(numero ?? 0)
   if (!Number.isInteger(value) || value <= 0) return ''
-  const padded = String(value).padStart(9, '0')
+  const padded = String(value).padStart(8, '0')
+  if (padded.length === 9) return `${padded.slice(0, 3)}.${padded.slice(3, 6)}/${padded.slice(6)}`
   if (padded.length > 9) return String(value)
-  return `${padded.slice(0, 3)}.${padded.slice(3, 6)}/${padded.slice(6)}`
+  return `${padded.slice(0, 3)}.${padded.slice(3, 6)}/${padded.slice(6, 8)}`
+}
+
+/**
+ * Enmascara lo que escribe el operador para el N° de expediente de
+ * retenciones: sólo dígitos, máximo 8, con el formato 000.000/00.
+ */
+export function formatExpedienteRetencionesInput(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 8)
+  if (!digits) return ''
+  const parte1 = digits.slice(0, 3)
+  const parte2 = digits.slice(3, 6)
+  const parte3 = digits.slice(6, 8)
+  let resultado = parte1
+  if (digits.length > 3) resultado += `.${parte2}`
+  if (digits.length > 6) resultado += `/${parte3}`
+  return resultado
 }
 
 /**
  * Convierte el N° de expediente de retenciones escrito por el operador
- * (por ejemplo "000.123/456") al entero correlativo que guarda la base.
- * Devuelve null si no hay dígitos o si supera los 9 dígitos permitidos.
+ * (por ejemplo "000.123/45") al entero correlativo que guarda la base.
+ * Devuelve null si no hay dígitos o si supera los 8 dígitos permitidos.
  */
 export function parseExpedienteRetenciones(value: string | number | null | undefined): number | null {
   if (value == null) return null
   const digits = String(value).replace(/\D/g, '')
-  if (!digits || digits.length > 9) return null
+  if (!digits || digits.length > 8) return null
   const parsed = Number(digits)
   if (!Number.isSafeInteger(parsed) || parsed <= 0) return null
   return parsed
@@ -83,7 +102,7 @@ export interface Embargo {
   autos: string
   /** N° de expediente judicial (SAC). */
   expediente: string
-  /** N° interno de retenciones, formato 000.000/000. */
+  /** N° interno de retenciones, formato 000.000/00. */
   expedienteRetenciones: string
   fechaExpediente: string
   cuenta: string
@@ -333,10 +352,9 @@ export function formatMoney(value: number | null | undefined, withSymbol = true)
 
 export function formatMoneyTyping(input: string): string {
   if (!input) return ''
-  let normalized = input.trim()
-  if (!normalized.includes(',') && normalized.endsWith('.')) {
-    normalized = normalized.slice(0, -1) + ','
-  }
+  const normalized = input.trim()
+  // Sólo se aceptan dígitos y coma decimal. El punto no se usa como separador
+  // decimal: se reserva para los miles del formato es-AR.
   const clean = normalized.replace(/[^\d,]/g, '')
   if (!clean) return ''
 

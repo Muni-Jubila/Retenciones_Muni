@@ -167,16 +167,23 @@ function validarEmbargo(input: EmbargoInput): { error?: string; field?: string }
     return { error: 'Seleccione un agente válido.', field: 'idAgente' }
   }
   if (input.autos.trim().length > 500) return { error: 'Los autos superan los 500 caracteres.', field: 'autos' }
-  if (input.expediente.trim().length > 100) return { error: 'El expediente supera los 100 caracteres.', field: 'expediente' }
+  if (input.expediente.trim() && !/^\d{1,8}$/.test(input.expediente.trim())) {
+    return {
+      error: 'El Expediente Judicial N° debe contener solo números, con un máximo de 8 dígitos.',
+      field: 'expediente',
+    }
+  }
   if (input.cuenta.trim() && !/^\d{1,8}$/.test(input.cuenta.trim())) {
     return { error: 'La Cuenta N° debe contener solo números, con un máximo de 8 dígitos.', field: 'cuenta' }
   }
   if (input.expedienteRetenciones.trim() && parseExpedienteRetenciones(input.expedienteRetenciones) === null) {
-    return { error: 'El Expediente Retenciones N° debe tener hasta 9 dígitos.', field: 'expedienteRetenciones' }
+    return { error: 'El Expediente Retenciones N° debe tener el formato 000.000/00 (máximo 8 dígitos).', field: 'expedienteRetenciones' }
   }
   if (input.sucursal.trim().length > 50) return { error: 'La sucursal supera los 50 caracteres.', field: 'sucursal' }
   if (input.juez.trim().length > 255) return { error: 'El juzgado supera los 255 caracteres.', field: 'juez' }
+  if (/\d/.test(input.juez)) return { error: 'El Juzgado no puede contener números.', field: 'juez' }
   if (input.secretaria.trim().length > 100) return { error: 'El juez supera los 100 caracteres.', field: 'secretaria' }
+  if (/\d/.test(input.secretaria)) return { error: 'El Juez no puede contener números.', field: 'secretaria' }
   if (input.observaciones.trim().length > 1000) return { error: 'Las observaciones superan los 1000 caracteres.', field: 'observaciones' }
 
   const fechaError = getDateValidationError(input.fechaExpediente, true)
@@ -404,7 +411,7 @@ export async function crearEmbargo(input: EmbargoInput): Promise<EmbargoActionRe
     if (input.expedienteRetenciones.trim() && nroRetenciones === null) {
       return {
         ok: false,
-        error: 'El Expediente Retenciones N° debe tener hasta 9 dígitos.',
+        error: 'El Expediente Retenciones N° debe tener el formato 000.000/00 (máximo 8 dígitos).',
         field: 'expedienteRetenciones',
       }
     }
@@ -507,7 +514,7 @@ export async function actualizarEmbargo(id: number, input: EmbargoInput): Promis
     if (input.expedienteRetenciones.trim() && nroRetenciones === null) {
       return {
         ok: false,
-        error: 'El Expediente Retenciones N° debe tener hasta 9 dígitos.',
+        error: 'El Expediente Retenciones N° debe tener el formato 000.000/00 (máximo 8 dígitos).',
         field: 'expedienteRetenciones',
       }
     }
@@ -692,25 +699,33 @@ export async function crearRetencion(input: RetencionInput): Promise<RetencionAc
     const devolucion = parseMoneyInput(input.devolucion)
     if (retencion < 0) return { ok: false, error: 'La retención no puede ser negativa.', field: 'retencionMensual' }
     if (devolucion < 0) return { ok: false, error: 'La devolución no puede ser negativa.', field: 'devolucion' }
-    if (retencion === 0 && devolucion === 0) {
-      return { ok: false, error: 'Ingrese una retención o una devolución.', field: 'retencionMensual' }
-    }
-    const desglose = repartirRetencion(retencion, sueldoNum, refrigerioNum, salarioMinimo)
 
     const saldoPrevio = roundMoney(
       embargo.RETENCION_EMBARGO.filter((item) => item.PERIODO < periodo).reduce(
-        (acc, item) => acc - Number(item.RETENCION_MENSUAL) + Number(item.DEVOLUCION),
+        (acc, item) => {
+          const mensual = Number(item.RETENCION_MENSUAL)
+          const desglose = roundMoney(Number(item.SUELDO) + Number(item.REFRIGERIO))
+          return acc - (mensual > 0 ? mensual : desglose) + Number(item.DEVOLUCION)
+        },
         Number(embargo.DEUDA),
       ),
     )
-    if (retencion > saldoPrevio + devolucion) {
+    // El importe retenido nunca puede superar el saldo pendiente del embargo:
+    // si el operador carga 320.000 y quedan 9.000, se registra 9.000.
+    const saldoDisponible = Math.max(saldoPrevio, 0)
+    if (retencion > saldoDisponible) retencion = roundMoney(saldoDisponible)
+    if (retencion === 0 && devolucion === 0) {
       return {
         ok: false,
-        error: `La retención supera el saldo disponible (${saldoPrevio.toFixed(2)}).`,
+        error:
+          saldoDisponible <= 0
+            ? 'El embargo no tiene saldo pendiente para retener.'
+            : 'Ingrese una retención o una devolución.',
         field: 'retencionMensual',
       }
     }
 
+    const desglose = repartirRetencion(retencion, sueldoNum, refrigerioNum, salarioMinimo)
     const saldo = roundMoney(saldoPrevio - retencion + devolucion)
 
     const creada = await prisma.rETENCION_EMBARGO.create({
@@ -764,13 +779,10 @@ export async function actualizarRetencion(
       return { ok: false, error: `Ya existe una retención para ${periodoLabel(periodo)}.`, field: 'periodo' }
     }
 
-    const retencion = parseMoneyInput(input.retencionMensual)
+    let retencion = parseMoneyInput(input.retencionMensual)
     const devolucion = parseMoneyInput(input.devolucion)
     if (retencion < 0) return { ok: false, error: 'La retención no puede ser negativa.', field: 'retencionMensual' }
     if (devolucion < 0) return { ok: false, error: 'La devolución no puede ser negativa.', field: 'devolucion' }
-    if (retencion === 0 && devolucion === 0) {
-      return { ok: false, error: 'Ingrese una retención o una devolución.', field: 'retencionMensual' }
-    }
 
     const haberesSueldo = parseMoneyInput(input.sueldo)
     const haberesRefrigerio = parseMoneyInput(input.refrigerio)
@@ -779,7 +791,6 @@ export async function actualizarRetencion(
     }
     const salarioMinimo = input.salarioMinimo?.trim() ? parseMoneyInput(input.salarioMinimo) : SALARIO_MINIMO_DEFAULT
     if (salarioMinimo < 0) return { ok: false, error: 'El salario mínimo no puede ser negativo.', field: 'salarioMinimo' }
-    const desglose = repartirRetencion(retencion, haberesSueldo, haberesRefrigerio, salarioMinimo)
 
     const embargo = await prisma.eMBARGO.findUnique({
       where: { ID_EMBARGO: actual.ID_EMBARGO },
@@ -789,18 +800,29 @@ export async function actualizarRetencion(
 
     const saldoPrevio = roundMoney(
       embargo.RETENCION_EMBARGO.filter((item) => item.PERIODO < periodo && item.ID_RETENCION !== id).reduce(
-        (acc, item) => acc - Number(item.RETENCION_MENSUAL) + Number(item.DEVOLUCION),
+        (acc, item) => {
+          const mensual = Number(item.RETENCION_MENSUAL)
+          const desglose = roundMoney(Number(item.SUELDO) + Number(item.REFRIGERIO))
+          return acc - (mensual > 0 ? mensual : desglose) + Number(item.DEVOLUCION)
+        },
         Number(embargo.DEUDA),
       ),
     )
-    if (retencion > saldoPrevio + devolucion) {
+    // Igual que en el alta: la retención se ajusta al saldo pendiente.
+    const saldoDisponible = Math.max(saldoPrevio, 0)
+    if (retencion > saldoDisponible) retencion = roundMoney(saldoDisponible)
+    if (retencion === 0 && devolucion === 0) {
       return {
         ok: false,
-        error: `La retención supera el saldo disponible (${saldoPrevio.toFixed(2)}).`,
+        error:
+          saldoDisponible <= 0
+            ? 'El embargo no tiene saldo pendiente para retener.'
+            : 'Ingrese una retención o una devolución.',
         field: 'retencionMensual',
       }
     }
 
+    const desglose = repartirRetencion(retencion, haberesSueldo, haberesRefrigerio, salarioMinimo)
     const saldo = roundMoney(saldoPrevio - retencion + devolucion)
     const actualizada = await prisma.rETENCION_EMBARGO.update({
       where: { ID_RETENCION: id },

@@ -2,9 +2,17 @@
 
 import { useState } from 'react'
 import { FilePlus2, FileText, Save, X } from 'lucide-react'
-import { ESTADOS_EMBARGO, parseExpedienteRetenciones, type Embargo, type EmbargoInput } from '@/lib/embargos'
+import {
+  ESTADOS_EMBARGO,
+  formatExpedienteRetencionesInput,
+  moneyToInput,
+  parseExpedienteRetenciones,
+  parseMoneyInput,
+  type Embargo,
+  type EmbargoInput,
+} from '@/lib/embargos'
 import type { Empleado } from '@/lib/empleados'
-import { formatDate } from '@/lib/format-utils'
+import { formatDate, formatLetrasSinNumeros, getDateValidationError } from '@/lib/format-utils'
 import { Banner, MoneyField, SelectField, TextField } from '@/components/embargos/ui'
 
 interface EmbargoFormProps {
@@ -26,10 +34,10 @@ function fromEmbargo(
   initial?: Embargo | null,
   prefill?: Partial<EmbargoInput> | null,
 ): EmbargoInput {
-  return {
+  const base: EmbargoInput = {
     estado: initial?.estado ?? '',
     autos: initial?.autos ?? '',
-    expediente: initial?.expediente ?? '',
+    expediente: (initial?.expediente ?? '').replace(/\D/g, ''),
     expedienteRetenciones: initial?.expedienteRetenciones ?? '',
     fechaExpediente: initial?.fechaExpediente ?? '',
     cuenta: (initial?.cuenta ?? '').replace(/\D/g, '').slice(0, 8),
@@ -39,12 +47,23 @@ function fromEmbargo(
     nomenclatura: initial?.nomenclatura ?? '',
     tipoProceso: initial?.tipoProceso ?? '',
     secretaria: initial?.secretaria ?? '',
-    deuda: initial?.deuda ? String(initial.deuda).replace('.', ',') : '',
-    importeMensual: initial?.importeMensual ? String(initial.importeMensual).replace('.', ',') : '',
-    porcentaje: initial?.porcentaje ? String(initial.porcentaje).replace('.', ',') : '',
+    deuda: initial?.deuda ? moneyToInput(initial.deuda) : '',
+    importeMensual: initial?.importeMensual ? moneyToInput(initial.importeMensual) : '',
+    porcentaje: initial?.porcentaje ? moneyToInput(initial.porcentaje) : '',
     marcaEspecial: initial?.marcaEspecial ?? '',
     observaciones: initial?.observaciones ?? '',
+    idAgente: agente.id,
+  }
+  if (!prefill) return base
+
+  return {
+    ...base,
     ...prefill,
+    expediente: (prefill.expediente ?? base.expediente).replace(/\D/g, ''),
+    cuenta: (prefill.cuenta ?? base.cuenta).replace(/\D/g, '').slice(0, 8),
+    juez: prefill.juez ?? base.juez,
+    secretaria: prefill.secretaria ?? base.secretaria,
+    expedienteRetenciones: prefill.expedienteRetenciones ?? base.expedienteRetenciones,
     idAgente: agente.id,
   }
 }
@@ -63,27 +82,84 @@ export default function EmbargoForm({
 }: EmbargoFormProps) {
   const [form, setForm] = useState<EmbargoInput>(() => fromEmbargo(agente, initial, prefill))
   const [localError, setLocalError] = useState<string | null>(null)
+  const [errores, setErrores] = useState<Record<string, string>>({})
 
   const update = (key: keyof EmbargoInput, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }))
+    setErrores((prev) => {
+      if (!prev[key]) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }
+
+  /**
+   * Aplica una máscara y, si el operador escribió algo que no corresponde,
+   * deja el campo marcado para que se vea el borde rojo.
+   */
+  const updateMascara = (
+    key: keyof EmbargoInput,
+    raw: string,
+    limpio: string,
+    mensaje: string,
+    invalido: boolean,
+  ) => {
+    setForm((prev) => ({ ...prev, [key]: limpio }))
+    setErrores((prev) => {
+      const next = { ...prev }
+      if (invalido && raw.trim() !== '') next[key] = mensaje
+      else delete next[key]
+      return next
+    })
+  }
+
+  const errorDe = (key: string): string | null =>
+    errores[key] ?? (field === key ? error ?? null : null)
+
+  const handleFechaChange = (value: string) => {
+    const limpio = formatDate(value)
+    const errorFecha = getDateValidationError(limpio, false)
+    const formatoInvalido = /[^0-9/\s.-]/.test(value) || value.replace(/\D/g, '').length > 8
+    const mensaje = errorFecha ?? (formatoInvalido ? 'Usá el formato dd/mm/aaaa.' : '')
+    updateMascara('fechaExpediente', value, limpio, mensaje, Boolean(errorFecha) || formatoInvalido)
+  }
+
+  const validarFormulario = (): Record<string, string> => {
+    const next: Record<string, string> = {}
+    if (!form.expediente.trim() && !form.autos.trim()) {
+      next.autos = 'Ingresá al menos los autos o el número de expediente judicial.'
+    }
+    if (form.expediente.trim() && !/^\d{1,8}$/.test(form.expediente.trim())) {
+      next.expediente = 'Solo números, máximo 8 dígitos.'
+    }
+    if (form.expedienteRetenciones.trim() && parseExpedienteRetenciones(form.expedienteRetenciones) === null) {
+      next.expedienteRetenciones = 'Usá el formato 000.000/00 (máximo 8 dígitos).'
+    }
+    const fechaError = getDateValidationError(form.fechaExpediente, true)
+    if (fechaError) next.fechaExpediente = fechaError
+    if (form.cuenta.trim() && !/^\d{1,8}$/.test(form.cuenta.trim())) {
+      next.cuenta = 'Solo números, máximo 8 dígitos.'
+    }
+    if (/\d/.test(form.juez)) next.juez = 'El Juzgado no puede contener números.'
+    if (/\d/.test(form.secretaria)) next.secretaria = 'El Juez no puede contener números.'
+    const deuda = parseMoneyInput(form.deuda)
+    if (deuda < 0) next.deuda = 'La deuda no puede ser negativa.'
+    const importe = parseMoneyInput(form.importeMensual)
+    if (importe < 0) next.importeMensual = 'El importe mensual no puede ser negativo.'
+    const porcentaje = parseMoneyInput(form.porcentaje)
+    if (form.porcentaje.trim() && (porcentaje < 0 || porcentaje > 100)) {
+      next.porcentaje = 'El porcentaje debe estar entre 0 y 100.'
+    }
+    return next
   }
 
   const handleSubmit = () => {
     setLocalError(null)
-    if (!form.expediente.trim() && !form.autos.trim()) {
-      setLocalError('Ingrese al menos los autos o el número de expediente judicial.')
-      return
-    }
-    if (form.fechaExpediente.trim() && !/^\d{2}\/\d{2}\/\d{4}$/.test(form.fechaExpediente.trim())) {
-      setLocalError('La fecha del expediente debe tener el formato dd/mm/aaaa.')
-      return
-    }
-    if (form.cuenta.trim() && !/^\d{1,8}$/.test(form.cuenta.trim())) {
-      setLocalError('La Cuenta N° debe contener solo números, con un máximo de 8 dígitos.')
-      return
-    }
-    if (form.expedienteRetenciones.trim() && parseExpedienteRetenciones(form.expedienteRetenciones) === null) {
-      setLocalError('El Expediente Retenciones N° debe tener hasta 9 dígitos.')
+    const nuevosErrores = validarFormulario()
+    setErrores(nuevosErrores)
+    if (Object.keys(nuevosErrores).length > 0) {
+      setLocalError('Revisá los campos marcados en rojo: hay datos incompletos o con formato incorrecto.')
       return
     }
     onSubmit(form)
@@ -159,33 +235,55 @@ export default function EmbargoForm({
                 maxLength={500}
                 rows={2}
                 placeholder="Ej: FREIRE, JUAN MANUEL C/ CACERES, RODRIGO GUSTAVO"
-                className="resize-none rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 placeholder:text-slate-300 transition focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-blue-200"
+                className={`resize-none rounded-md border px-2.5 py-1.5 text-sm transition ${
+                  errores.autos
+                    ? 'border-rose-500 bg-rose-50/40 text-rose-900 focus:outline-none focus:ring-2 focus:ring-rose-200'
+                    : 'border-slate-200 bg-white text-slate-800 placeholder:text-slate-300 focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-blue-200'
+                }`}
               />
+              {errores.autos && <span className="text-[10px] font-semibold text-rose-600">{errores.autos}</span>}
             </label>
             <TextField
               label="Expediente Judicial N°"
               value={form.expediente}
-              onChange={(value) => update('expediente', value)}
-              placeholder="006.148/26"
-              maxLength={100}
-              error={field === 'expediente' ? error : null}
+              onChange={(value) =>
+                updateMascara(
+                  'expediente',
+                  value,
+                  value.replace(/\D/g, '').slice(0, 8),
+                  'Solo números, máximo 8 dígitos.',
+                  /[^\d./\s-]/.test(value) || value.replace(/\D/g, '').length > 8,
+                )
+              }
+              placeholder="Ej: 00614826"
+              maxLength={20}
+              hint="Solo números, hasta 8 dígitos."
+              error={errorDe('expediente')}
             />
             <TextField
               label="Expediente Retenciones N°"
               value={form.expedienteRetenciones}
-              onChange={(value) => update('expedienteRetenciones', value.replace(/[^\d./]/g, '').slice(0, 11))}
-              placeholder={initial ? '—' : 'Se asigna automáticamente'}
-              maxLength={11}
-              hint={initial ? 'Podés modificar el N° interno (000.000/000).' : 'Correlativo automático si lo dejás vacío (000.000/000).'}
-              error={field === 'expedienteRetenciones' ? error : null}
+              onChange={(value) =>
+                updateMascara(
+                  'expedienteRetenciones',
+                  value,
+                  formatExpedienteRetencionesInput(value),
+                  'Usá el formato 000.000/00 (máximo 8 dígitos).',
+                  /[^0-9./\s-]/.test(value) || value.replace(/\D/g, '').length > 8,
+                )
+              }
+              placeholder={initial ? '—' : '000.000/00'}
+              maxLength={10}
+              hint={initial ? 'Formato 000.000/00. Se puede modificar.' : 'Correlativo automático si lo dejás vacío.'}
+              error={errorDe('expedienteRetenciones')}
             />
             <TextField
               label="Fecha expediente"
               value={form.fechaExpediente}
-              onChange={(value) => update('fechaExpediente', formatDate(value))}
+              onChange={handleFechaChange}
               placeholder="dd/mm/aaaa"
               maxLength={10}
-              error={field === 'fechaExpediente' ? error : null}
+              error={errorDe('fechaExpediente')}
             />
             <TextField
               label="Suc."
@@ -201,21 +299,39 @@ export default function EmbargoForm({
               placeholder="15367884"
               maxLength={8}
               hint="Solo números, hasta 8 dígitos."
-              error={field === 'cuenta' ? error : null}
+              error={errorDe('cuenta')}
             />
             <TextField
               label="Juzgado"
               value={form.juez}
-              onChange={(value) => update('juez', value)}
+              onChange={(value) =>
+                updateMascara(
+                  'juez',
+                  value,
+                  formatLetrasSinNumeros(value).slice(0, 255),
+                  'El Juzgado solo admite letras, sin números.',
+                  /\d/.test(value),
+                )
+              }
               placeholder="Juzgado / organismo"
               maxLength={255}
+              error={errorDe('juez')}
             />
             <TextField
               label="Juez"
               value={form.secretaria}
-              onChange={(value) => update('secretaria', value)}
+              onChange={(value) =>
+                updateMascara(
+                  'secretaria',
+                  value,
+                  formatLetrasSinNumeros(value).slice(0, 100),
+                  'El Juez solo admite letras, sin números.',
+                  /\d/.test(value),
+                )
+              }
               placeholder="Nombre del juez"
               maxLength={100}
+              error={errorDe('secretaria')}
             />
           </div>
         </section>
@@ -230,7 +346,7 @@ export default function EmbargoForm({
               value={form.deuda}
               onChange={(value) => update('deuda', value)}
               hint="Importe total del embargo."
-              error={field === 'deuda' ? error : null}
+              error={errorDe('deuda')}
             />
             {initial && initial.estado !== 'BAJA' && initial.estado !== 'CANCELADO' ? (
               <SelectField

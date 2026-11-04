@@ -6,20 +6,31 @@ export function formatDate(value: string): string {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
 }
 
+function esAnioBisiesto(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+}
+
+/**
+ * Días del mes indicado. Se calcula sin `Date` para que los años de 4 dígitos
+ * (incluidos 0000-0099) no se interpreten como 1900+.
+ */
+function diasDelMes(month: number, year: number): number {
+  const dias = [31, esAnioBisiesto(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return dias[month - 1] ?? 31
+}
+
 export function isValidDateString(value: string): boolean {
   if (!value || !value.trim()) return true
   const parts = value.trim().split('/')
   if (parts.length !== 3) return false
   const [dayString, monthString, yearString] = parts
-  if (dayString.length !== 2 || monthString.length !== 2 || yearString.length !== 4) return false
+  if (!/^\d{2}$/.test(dayString) || !/^\d{2}$/.test(monthString) || !/^\d{4}$/.test(yearString)) return false
   const day = Number(dayString)
   const month = Number(monthString)
   const year = Number(yearString)
-  if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return false
-  if (year < 1900 || year > 3000) return false
   if (month < 1 || month > 12) return false
-  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
-  return day >= 1 && day <= daysInMonth
+  if (day < 1 || day > diasDelMes(month, year)) return false
+  return true
 }
 
 export function getDateValidationError(value: string | null | undefined, touched = false): string | null {
@@ -39,12 +50,16 @@ export function getDateValidationError(value: string | null | undefined, touched
 
   if (trimmed.length >= 10) {
     const [dayString, monthString, yearString] = parts
+    if (!/^\d{4}$/.test(yearString)) return 'Año inválido (aaaa)'
     const day = Number(dayString)
     const month = Number(monthString)
     const year = Number(yearString)
-    if (!Number.isInteger(year) || year < 1900 || year > 3000) return 'Año inválido (1900-3000)'
-    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
-    if (day < 1 || day > daysInMonth) return `Día inexistente (${day}/${month}/${year})`
+    if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) {
+      return 'Fecha inválida (dd/mm/aaaa)'
+    }
+    if (month < 1 || month > 12) return 'Mes inválido (01 al 12)'
+    const diaMaximo = diasDelMes(month, year)
+    if (day < 1 || day > diaMaximo) return `Día inexistente (${day}/${month}/${year})`
     if (!isValidDateString(trimmed)) return 'Fecha inválida (dd/mm/aaaa)'
   } else if (touched && trimmed.length > 0) {
     return 'Fecha incompleta (dd/mm/aaaa)'
@@ -72,6 +87,18 @@ export function extractDniFromCuil(value: string): string {
 export function formatLettersOnly(value: string): string {
   if (!value) return ''
   return value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g, '')
+}
+
+/**
+ * Texto para nombres propios, juzgados y jueces: permite letras, espacios y
+ * signos habituales (punto, coma, apóstrofo, guion y paréntesis), pero bloquea
+ * números y símbolos raros. Se usa para las restricciones del formulario.
+ */
+export function formatLetrasSinNumeros(value: string): string {
+  if (!value) return ''
+  return value
+    .replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s.,'’()\-°º/]/g, '')
+    .replace(/\s{2,}/g, ' ')
 }
 
 export function formatDigitsOnly(value: string): string {
