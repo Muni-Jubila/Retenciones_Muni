@@ -16,8 +16,6 @@ import {
   periodoLabel,
   parseExpedienteRetenciones,
   parseMoneyInput,
-  calcularRetencionHaberes,
-  repartirRetencion,
   roundMoney,
   SALARIO_MINIMO_DEFAULT,
   toCsv,
@@ -55,6 +53,22 @@ function decimal(value: number): Prisma.Decimal {
   return new Prisma.Decimal(roundMoney(value).toFixed(2))
 }
 
+type RetencionMontos = {
+  RETENCION_MENSUAL: Prisma.Decimal | number | null
+  RETENCION_SUELDO?: Prisma.Decimal | number | null
+  RETENCION_REFRIGERIO?: Prisma.Decimal | number | null
+}
+
+/**
+ * Importe efectivo de una retención. El total se guarda en RETENCION_MENSUAL;
+ * para registros viejos sin total se usa la suma del desglose manual.
+ */
+function montoRetenido(retencion: RetencionMontos): number {
+  const mensual = Number(retencion.RETENCION_MENSUAL ?? 0)
+  if (mensual > 0) return roundMoney(mensual)
+  return roundMoney(Number(retencion.RETENCION_SUELDO ?? 0) + Number(retencion.RETENCION_REFRIGERIO ?? 0))
+}
+
 function parseDate(value: string): Date | null {
   const parts = value.trim().split('/')
   if (parts.length !== 3) return null
@@ -66,19 +80,18 @@ function parseDate(value: string): Date | null {
 function mapRetencion(fila: RetencionDb): RetencionEmbargo {
   const sueldo = Number(fila.SUELDO)
   const refrigerio = Number(fila.REFRIGERIO)
-  const retencionMensual = Number(fila.RETENCION_MENSUAL)
+  const retencionMensualGuardada = Number(fila.RETENCION_MENSUAL)
   let retencionSueldo = Number(fila.RETENCION_SUELDO ?? 0)
   let retencionRefrigerio = Number(fila.RETENCION_REFRIGERIO ?? 0)
-  // Retenciones anteriores al desglose: repartir en proporción a los haberes.
-  if (retencionSueldo === 0 && retencionRefrigerio === 0 && retencionMensual > 0) {
-    const haberes = roundMoney(sueldo + refrigerio)
-    if (haberes > 0) {
-      retencionSueldo = roundMoney((retencionMensual * sueldo) / haberes)
-      retencionRefrigerio = roundMoney(retencionMensual - retencionSueldo)
-    } else {
-      retencionSueldo = retencionMensual
-    }
+  // Registros anteriores al desglose manual: se muestra el total en sueldo
+  // para no perder el importe al editarlos.
+  if (retencionSueldo === 0 && retencionRefrigerio === 0 && retencionMensualGuardada > 0) {
+    retencionSueldo = retencionMensualGuardada
   }
+  const retencionMensual =
+    retencionMensualGuardada > 0
+      ? retencionMensualGuardada
+      : roundMoney(retencionSueldo + retencionRefrigerio)
 
   return {
     id: fila.ID_RETENCION,
@@ -101,11 +114,7 @@ function mapEmbargo(fila: EmbargoDb): Embargo {
   const retenciones = [...fila.RETENCION_EMBARGO].sort((a, b) => a.PERIODO.localeCompare(b.PERIODO))
   const deuda = Number(fila.DEUDA)
   const totalRetenido = roundMoney(
-    retenciones.reduce((acc, item) => {
-      const mensual = Number(item.RETENCION_MENSUAL)
-      const desglose = roundMoney(Number(item.SUELDO) + Number(item.REFRIGERIO))
-      return acc + (mensual > 0 ? mensual : desglose)
-    }, 0),
+    retenciones.reduce((acc, item) => acc + montoRetenido(item), 0),
   )
   const totalDevuelto = roundMoney(
     retenciones.reduce((acc, item) => acc + Number(item.DEVOLUCION), 0),
@@ -289,10 +298,7 @@ async function recalcularSaldos(idEmbargo: number): Promise<number | null> {
 
   let saldo = Number(embargo.DEUDA)
   for (const retencion of embargo.RETENCION_EMBARGO) {
-    const mensual = Number(retencion.RETENCION_MENSUAL)
-    const desglose = roundMoney(Number(retencion.SUELDO) + Number(retencion.REFRIGERIO))
-    const efectiva = mensual > 0 ? mensual : desglose
-    saldo = roundMoney(saldo - efectiva + Number(retencion.DEVOLUCION))
+    saldo = roundMoney(saldo - montoRetenido(retencion) + Number(retencion.DEVOLUCION))
     if (Number(retencion.SALDO) !== saldo) {
       await prisma.rETENCION_EMBARGO.update({
         where: { ID_RETENCION: retencion.ID_RETENCION },
@@ -684,59 +690,58 @@ export async function crearRetencion(input: RetencionInput): Promise<RetencionAc
       return { ok: false, error: `Ya existe una retención para ${periodoLabel(periodo)}.`, field: 'periodo' }
     }
 
-    const sueldoNum = parseMoneyInput(input.sueldo)
-    const refrigerioNum = parseMoneyInput(input.refrigerio)
-    if (sueldoNum < 0 || refrigerioNum < 0) {
-      return { ok: false, error: 'El sueldo y el refrigerio no pueden ser negativos.', field: 'sueldo' }
-    }
-    const salarioMinimo = input.salarioMinimo?.trim() ? parseMoneyInput(input.salarioMinimo) : SALARIO_MINIMO_DEFAULT
-    if (salarioMinimo < 0) return { ok: false, error: 'El salario mínimo no puede ser negativo.', field: 'salarioMinimo' }
-    let retencion = parseMoneyInput(input.retencionMensual)
-    if (retencion === 0 && (sueldoNum > 0 || refrigerioNum > 0)) {
-      // Si el operador no define el importe, se toma el cálculo de haberes.
-      retencion = calcularRetencionHaberes(sueldoNum, refrigerioNum, salarioMinimo).retencionMensual
+    let retencionSueldo = parseMoneyInput(input.retencionSueldo)
+    let retencionRefrigerio = parseMoneyInput(input.retencionRefrigerio)
+    if (retencionSueldo < 0 || retencionRefrigerio < 0) {
+      return {
+        ok: false,
+        error: 'Las retenciones de sueldo y refrigerio no pueden ser negativas.',
+        field: 'retencionSueldo',
+      }
     }
     const devolucion = parseMoneyInput(input.devolucion)
-    if (retencion < 0) return { ok: false, error: 'La retención no puede ser negativa.', field: 'retencionMensual' }
     if (devolucion < 0) return { ok: false, error: 'La devolución no puede ser negativa.', field: 'devolucion' }
 
     const saldoPrevio = roundMoney(
       embargo.RETENCION_EMBARGO.filter((item) => item.PERIODO < periodo).reduce(
-        (acc, item) => {
-          const mensual = Number(item.RETENCION_MENSUAL)
-          const desglose = roundMoney(Number(item.SUELDO) + Number(item.REFRIGERIO))
-          return acc - (mensual > 0 ? mensual : desglose) + Number(item.DEVOLUCION)
-        },
+        (acc, item) => acc - montoRetenido(item) + Number(item.DEVOLUCION),
         Number(embargo.DEUDA),
       ),
     )
-    // El importe retenido nunca puede superar el saldo pendiente del embargo:
-    // si el operador carga 320.000 y quedan 9.000, se registra 9.000.
+    // La suma de ambas retenciones no puede superar el saldo pendiente.
+    // Si se excede, se ajusta primero la retención de sueldo y luego la de refrigerio.
     const saldoDisponible = Math.max(saldoPrevio, 0)
-    if (retencion > saldoDisponible) retencion = roundMoney(saldoDisponible)
+    let retencion = roundMoney(retencionSueldo + retencionRefrigerio)
+    if (retencion > saldoDisponible) {
+      const excedente = roundMoney(retencion - saldoDisponible)
+      if (retencionSueldo >= excedente) {
+        retencionSueldo = roundMoney(retencionSueldo - excedente)
+      } else {
+        const resto = roundMoney(excedente - retencionSueldo)
+        retencionSueldo = 0
+        retencionRefrigerio = roundMoney(Math.max(retencionRefrigerio - resto, 0))
+      }
+      retencion = roundMoney(retencionSueldo + retencionRefrigerio)
+    }
     if (retencion === 0 && devolucion === 0) {
       return {
         ok: false,
         error:
           saldoDisponible <= 0
             ? 'El embargo no tiene saldo pendiente para retener.'
-            : 'Ingrese una retención o una devolución.',
-        field: 'retencionMensual',
+            : 'Ingrese al menos una retención de sueldo o refrigerio.',
+        field: 'retencionSueldo',
       }
     }
 
-    const desglose = repartirRetencion(retencion, sueldoNum, refrigerioNum, salarioMinimo)
     const saldo = roundMoney(saldoPrevio - retencion + devolucion)
 
     const creada = await prisma.rETENCION_EMBARGO.create({
       data: {
         ID_EMBARGO: input.idEmbargo,
         PERIODO: periodo,
-        SUELDO: decimal(sueldoNum),
-        REFRIGERIO: decimal(refrigerioNum),
-        RETENCION_SUELDO: decimal(desglose.retencionSueldo),
-        RETENCION_REFRIGERIO: decimal(desglose.retencionRefrigerio),
-        SALARIO_MINIMO: decimal(salarioMinimo),
+        RETENCION_SUELDO: decimal(retencionSueldo),
+        RETENCION_REFRIGERIO: decimal(retencionRefrigerio),
         RETENCION_MENSUAL: decimal(retencion),
         DEVOLUCION: decimal(devolucion),
         SALDO: decimal(saldo),
@@ -779,18 +784,17 @@ export async function actualizarRetencion(
       return { ok: false, error: `Ya existe una retención para ${periodoLabel(periodo)}.`, field: 'periodo' }
     }
 
-    let retencion = parseMoneyInput(input.retencionMensual)
-    const devolucion = parseMoneyInput(input.devolucion)
-    if (retencion < 0) return { ok: false, error: 'La retención no puede ser negativa.', field: 'retencionMensual' }
-    if (devolucion < 0) return { ok: false, error: 'La devolución no puede ser negativa.', field: 'devolucion' }
-
-    const haberesSueldo = parseMoneyInput(input.sueldo)
-    const haberesRefrigerio = parseMoneyInput(input.refrigerio)
-    if (haberesSueldo < 0 || haberesRefrigerio < 0) {
-      return { ok: false, error: 'El sueldo y el refrigerio no pueden ser negativos.', field: 'sueldo' }
+    let retencionSueldo = parseMoneyInput(input.retencionSueldo)
+    let retencionRefrigerio = parseMoneyInput(input.retencionRefrigerio)
+    if (retencionSueldo < 0 || retencionRefrigerio < 0) {
+      return {
+        ok: false,
+        error: 'Las retenciones de sueldo y refrigerio no pueden ser negativas.',
+        field: 'retencionSueldo',
+      }
     }
-    const salarioMinimo = input.salarioMinimo?.trim() ? parseMoneyInput(input.salarioMinimo) : SALARIO_MINIMO_DEFAULT
-    if (salarioMinimo < 0) return { ok: false, error: 'El salario mínimo no puede ser negativo.', field: 'salarioMinimo' }
+    const devolucion = parseMoneyInput(input.devolucion)
+    if (devolucion < 0) return { ok: false, error: 'La devolución no puede ser negativa.', field: 'devolucion' }
 
     const embargo = await prisma.eMBARGO.findUnique({
       where: { ID_EMBARGO: actual.ID_EMBARGO },
@@ -800,39 +804,43 @@ export async function actualizarRetencion(
 
     const saldoPrevio = roundMoney(
       embargo.RETENCION_EMBARGO.filter((item) => item.PERIODO < periodo && item.ID_RETENCION !== id).reduce(
-        (acc, item) => {
-          const mensual = Number(item.RETENCION_MENSUAL)
-          const desglose = roundMoney(Number(item.SUELDO) + Number(item.REFRIGERIO))
-          return acc - (mensual > 0 ? mensual : desglose) + Number(item.DEVOLUCION)
-        },
+        (acc, item) => acc - montoRetenido(item) + Number(item.DEVOLUCION),
         Number(embargo.DEUDA),
       ),
     )
-    // Igual que en el alta: la retención se ajusta al saldo pendiente.
+    // Igual que en el alta: el total se ajusta al saldo pendiente, primero
+    // sobre la retención de sueldo y luego sobre la de refrigerio.
     const saldoDisponible = Math.max(saldoPrevio, 0)
-    if (retencion > saldoDisponible) retencion = roundMoney(saldoDisponible)
+    let retencion = roundMoney(retencionSueldo + retencionRefrigerio)
+    if (retencion > saldoDisponible) {
+      const excedente = roundMoney(retencion - saldoDisponible)
+      if (retencionSueldo >= excedente) {
+        retencionSueldo = roundMoney(retencionSueldo - excedente)
+      } else {
+        const resto = roundMoney(excedente - retencionSueldo)
+        retencionSueldo = 0
+        retencionRefrigerio = roundMoney(Math.max(retencionRefrigerio - resto, 0))
+      }
+      retencion = roundMoney(retencionSueldo + retencionRefrigerio)
+    }
     if (retencion === 0 && devolucion === 0) {
       return {
         ok: false,
         error:
           saldoDisponible <= 0
             ? 'El embargo no tiene saldo pendiente para retener.'
-            : 'Ingrese una retención o una devolución.',
-        field: 'retencionMensual',
+            : 'Ingrese al menos una retención de sueldo o refrigerio.',
+        field: 'retencionSueldo',
       }
     }
 
-    const desglose = repartirRetencion(retencion, haberesSueldo, haberesRefrigerio, salarioMinimo)
     const saldo = roundMoney(saldoPrevio - retencion + devolucion)
     const actualizada = await prisma.rETENCION_EMBARGO.update({
       where: { ID_RETENCION: id },
       data: {
         PERIODO: periodo,
-        SUELDO: decimal(haberesSueldo),
-        REFRIGERIO: decimal(haberesRefrigerio),
-        RETENCION_SUELDO: decimal(desglose.retencionSueldo),
-        RETENCION_REFRIGERIO: decimal(desglose.retencionRefrigerio),
-        SALARIO_MINIMO: decimal(salarioMinimo),
+        RETENCION_SUELDO: decimal(retencionSueldo),
+        RETENCION_REFRIGERIO: decimal(retencionRefrigerio),
         RETENCION_MENSUAL: decimal(retencion),
         DEVOLUCION: decimal(devolucion),
         SALDO: decimal(saldo),
@@ -1033,7 +1041,7 @@ export async function actualizarEsperas(): Promise<ActualizacionMasivaResult> {
       agentes.add(embargo.ID_AGENTE)
       const saldo = roundMoney(
         embargo.RETENCION_EMBARGO.reduce(
-          (acc, item) => acc - Number(item.RETENCION_MENSUAL) + Number(item.DEVOLUCION),
+          (acc, item) => acc - montoRetenido(item) + Number(item.DEVOLUCION),
           Number(embargo.DEUDA),
         ),
       )
@@ -1103,7 +1111,7 @@ export async function imputarPeriodo(periodo: string): Promise<ImputacionResult>
       const yaExiste = embargo.RETENCION_EMBARGO.some((item) => item.PERIODO === per)
       const saldo = roundMoney(
         embargo.RETENCION_EMBARGO.reduce(
-          (acc, item) => acc - Number(item.RETENCION_MENSUAL) + Number(item.DEVOLUCION),
+          (acc, item) => acc - montoRetenido(item) + Number(item.DEVOLUCION),
           Number(embargo.DEUDA),
         ),
       )
@@ -1177,24 +1185,36 @@ export async function generarResumen(periodo: string): Promise<{ ok: boolean; er
 
     return {
       ok: true,
-      filas: filas.map((fila) => ({
-        idRetencion: fila.ID_RETENCION,
-        periodo: fila.PERIODO,
-        dni: fila.EMBARGO.DATOS_PERSONALES_AGENTE_JUBILA.DNI_AGENTE ?? '',
-        agente: composeFullName({
-          apellido: fila.EMBARGO.DATOS_PERSONALES_AGENTE_JUBILA.APELLIDO_AGENTE,
-          segundoApellido: fila.EMBARGO.DATOS_PERSONALES_AGENTE_JUBILA.SEGUNDO_APELLIDO_AGENTE,
-          nombre: fila.EMBARGO.DATOS_PERSONALES_AGENTE_JUBILA.NOMBRE_AGENTE,
-          segundoNombre: fila.EMBARGO.DATOS_PERSONALES_AGENTE_JUBILA.SEGUNDO_NOMBRE_AGENTE,
-        }),
-        autos: fila.EMBARGO.AUTOS ?? '',
-        expediente: fila.EMBARGO.EXPEDIENTE ?? '',
-        sueldo: Number(fila.SUELDO),
-        refrigerio: Number(fila.REFRIGERIO),
-        retencionMensual: Number(fila.RETENCION_MENSUAL),
-        devolucion: Number(fila.DEVOLUCION),
-        saldo: Number(fila.SALDO),
-      })),
+      filas: filas.map((fila) => {
+        const retencionMensualGuardada = Number(fila.RETENCION_MENSUAL)
+        let retencionSueldo = Number(fila.RETENCION_SUELDO ?? 0)
+        let retencionRefrigerio = Number(fila.RETENCION_REFRIGERIO ?? 0)
+        if (retencionSueldo === 0 && retencionRefrigerio === 0 && retencionMensualGuardada > 0) {
+          retencionSueldo = retencionMensualGuardada
+        }
+        const retencionMensual =
+          retencionMensualGuardada > 0
+            ? retencionMensualGuardada
+            : roundMoney(retencionSueldo + retencionRefrigerio)
+        return {
+          idRetencion: fila.ID_RETENCION,
+          periodo: fila.PERIODO,
+          dni: fila.EMBARGO.DATOS_PERSONALES_AGENTE_JUBILA.DNI_AGENTE ?? '',
+          agente: composeFullName({
+            apellido: fila.EMBARGO.DATOS_PERSONALES_AGENTE_JUBILA.APELLIDO_AGENTE,
+            segundoApellido: fila.EMBARGO.DATOS_PERSONALES_AGENTE_JUBILA.SEGUNDO_APELLIDO_AGENTE,
+            nombre: fila.EMBARGO.DATOS_PERSONALES_AGENTE_JUBILA.NOMBRE_AGENTE,
+            segundoNombre: fila.EMBARGO.DATOS_PERSONALES_AGENTE_JUBILA.SEGUNDO_NOMBRE_AGENTE,
+          }),
+          autos: fila.EMBARGO.AUTOS ?? '',
+          expediente: fila.EMBARGO.EXPEDIENTE ?? '',
+          retencionSueldo,
+          retencionRefrigerio,
+          retencionMensual,
+          devolucion: Number(fila.DEVOLUCION),
+          saldo: Number(fila.SALDO),
+        }
+      }),
     }
   } catch (error) {
     logServerError('[generarResumen] Error:', error)
@@ -1204,15 +1224,26 @@ export async function generarResumen(periodo: string): Promise<{ ok: boolean; er
 
 function resumenToCsv(filas: ResumenRetencion[]): string {
   return toCsv(
-    ['PERIODO', 'DNI', 'AGENTE', 'EXPEDIENTE', 'AUTOS', 'SUELDO', 'REFRIGERIO', 'RETENCION', 'DEVOLUCION', 'SALDO'],
+    [
+      'PERIODO',
+      'DNI',
+      'AGENTE',
+      'EXPEDIENTE',
+      'AUTOS',
+      'RETENCION_SUELDO',
+      'RETENCION_REFRIGERIO',
+      'RETENCION_MENSUAL',
+      'DEVOLUCION',
+      'SALDO',
+    ],
     filas.map((fila) => [
       periodoLabel(fila.periodo),
       fila.dni,
       fila.agente,
       fila.expediente,
       fila.autos,
-      fila.sueldo.toFixed(2),
-      fila.refrigerio.toFixed(2),
+      fila.retencionSueldo.toFixed(2),
+      fila.retencionRefrigerio.toFixed(2),
       fila.retencionMensual.toFixed(2),
       fila.devolucion.toFixed(2),
       fila.saldo.toFixed(2),
@@ -1359,6 +1390,9 @@ export async function exportarBackup(): Promise<{ ok: boolean; error?: string; c
               periodo: retencion.PERIODO,
               sueldo: Number(retencion.SUELDO),
               refrigerio: Number(retencion.REFRIGERIO),
+              retencionSueldo: Number(retencion.RETENCION_SUELDO),
+              retencionRefrigerio: Number(retencion.RETENCION_REFRIGERIO),
+              salarioMinimo: Number(retencion.SALARIO_MINIMO),
               retencionMensual: Number(retencion.RETENCION_MENSUAL),
               saldo: Number(retencion.SALDO),
               devolucion: Number(retencion.DEVOLUCION),
@@ -1545,7 +1579,7 @@ export async function verificarIntegridad(): Promise<{
       const embargo = mapEmbargo(fila)
       const saldoCalculado = roundMoney(
         [...fila.RETENCION_EMBARGO].reduce(
-          (acc, item) => acc - Number(item.RETENCION_MENSUAL) + Number(item.DEVOLUCION),
+          (acc, item) => acc - montoRetenido(item) + Number(item.DEVOLUCION),
           Number(fila.DEUDA),
         ),
       )

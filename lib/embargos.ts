@@ -135,13 +135,17 @@ export interface RetencionEmbargo {
   id: number
   idEmbargo: number
   periodo: string
+  /** Monto bruto legado. No se usa para el cálculo de la retención. */
   sueldo: number
+  /** Monto bruto legado. No se usa para el cálculo de la retención. */
   refrigerio: number
-  /** Cuánto se retuvo del sueldo y del refrigerio ese mes. */
+  /** Importe retenido del sueldo ese mes. */
   retencionSueldo: number
+  /** Importe retenido del refrigerio ese mes. */
   retencionRefrigerio: number
-  /** Salario mínimo vital y móvil usado para calcular la retención. */
+  /** Salario mínimo legado. No interviene en la carga manual. */
   salarioMinimo: number
+  /** Suma de las retenciones de sueldo y refrigerio. */
   retencionMensual: number
   saldo: number
   devolucion: number
@@ -174,69 +178,16 @@ export interface EmbargoInput {
 export interface RetencionInput {
   idEmbargo: number
   periodo: string
-  sueldo: string
-  refrigerio: string
-  retencionMensual: string
+  /** Importe que se retiene del sueldo. */
+  retencionSueldo: string
+  /** Importe que se retiene del refrigerio. */
+  retencionRefrigerio: string
   devolucion: string
   observaciones: string
-  /** Salario mínimo vital y móvil usado para el cálculo. */
-  salarioMinimo?: string
 }
 
-/** Salario mínimo vital y móvil estipulado; editable en el formulario. */
+/** Salario mínimo legado de la base. No se usa para calcular retenciones. */
 export const SALARIO_MINIMO_DEFAULT = 398800
-
-/**
- * Cálculo de la retención de haberes según el Decreto 484/87:
- *  - Del sueldo se descuenta el salario mínimo vital y móvil; sobre ese
- *    excedente se retiene el 10% mientras no supere el doble del salario
- *    mínimo, y el 20% cuando lo supera.
- *  - Del refrigerio se retiene el mismo porcentaje, sobre el monto completo
- *    (el salario mínimo no interviene).
- */
-export function calcularRetencionHaberes(
-  sueldo: number,
-  refrigerio: number,
-  salarioMinimo: number,
-): { excedente: number; retencionSueldo: number; retencionRefrigerio: number; retencionMensual: number; porcentaje: number } {
-  const minimo = salarioMinimo > 0 ? salarioMinimo : SALARIO_MINIMO_DEFAULT
-  const excedente = roundMoney(sueldo - minimo)
-  const porcentaje = excedente > roundMoney(2 * minimo) ? 20 : 10
-  const baseSueldo = excedente > 0 ? excedente : 0
-  const retencionSueldo = roundMoney((baseSueldo * porcentaje) / 100)
-  const retencionRefrigerio = roundMoney((refrigerio * porcentaje) / 100)
-  return {
-    excedente: baseSueldo,
-    retencionSueldo,
-    retencionRefrigerio,
-    retencionMensual: roundMoney(retencionSueldo + retencionRefrigerio),
-    porcentaje,
-  }
-}
-
-/**
- * Reparte el importe de una retención entre sueldo y refrigerio en proporción
- * al desglose calculado; se usa cuando el operador ajusta el total a mano.
- */
-export function repartirRetencion(
-  total: number,
-  sueldo: number,
-  refrigerio: number,
-  salarioMinimo: number,
-): { retencionSueldo: number; retencionRefrigerio: number } {
-  const calc = calcularRetencionHaberes(sueldo, refrigerio, salarioMinimo)
-  if (calc.retencionMensual > 0) {
-    const factor = total / calc.retencionMensual
-    const retencionSueldo = roundMoney(calc.retencionSueldo * factor)
-    return { retencionSueldo, retencionRefrigerio: roundMoney(total - retencionSueldo) }
-  }
-  const haberes = roundMoney(sueldo + refrigerio)
-  if (haberes > 0) {
-    const retencionSueldo = roundMoney((total * sueldo) / haberes)
-    return { retencionSueldo, retencionRefrigerio: roundMoney(total - retencionSueldo) }
-  }
-  return { retencionSueldo: total, retencionRefrigerio: 0 }
-}
 
 export interface ConsultaEmbargosFiltros {
   tipo?:
@@ -265,8 +216,8 @@ export interface ResumenRetencion {
   agente: string
   autos: string
   expediente: string
-  sueldo: number
-  refrigerio: number
+  retencionSueldo: number
+  retencionRefrigerio: number
   retencionMensual: number
   devolucion: number
   saldo: number

@@ -5,8 +5,6 @@ import {
   ordenarEmbargos,
   parseExpedienteRetenciones,
   parseMoneyInput,
-  calcularRetencionHaberes,
-  repartirRetencion,
   roundMoney,
   SALARIO_MINIMO_DEFAULT,
   periodoActual,
@@ -152,8 +150,8 @@ const mockEmbargos: MockEmbargo[] = [
     secretariaAgente: 'HACIENDA',
     cargo: 'EMPLEADO ADMINISTRATIVO',
     retenciones: [
-      { id: 1001, idEmbargo: 1, periodo: '2024-03', sueldo: 80000, refrigerio: 5000, retencionSueldo: 0, retencionRefrigerio: 0, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 15000, saldo: 105000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
-      { id: 1002, idEmbargo: 1, periodo: '2024-04', sueldo: 80000, refrigerio: 5000, retencionSueldo: 0, retencionRefrigerio: 0, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 15000, saldo: 90000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
+      { id: 1001, idEmbargo: 1, periodo: '2024-03', sueldo: 80000, refrigerio: 5000, retencionSueldo: 12000, retencionRefrigerio: 3000, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 15000, saldo: 105000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
+      { id: 1002, idEmbargo: 1, periodo: '2024-04', sueldo: 80000, refrigerio: 5000, retencionSueldo: 12000, retencionRefrigerio: 3000, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 15000, saldo: 90000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
     ],
   },
   {
@@ -213,7 +211,7 @@ const mockEmbargos: MockEmbargo[] = [
     secretariaAgente: 'HACIENDA',
     cargo: 'EMPLEADO ADMINISTRATIVO',
     retenciones: [
-      { id: 1003, idEmbargo: 3, periodo: '2023-11', sueldo: 60000, refrigerio: 4000, retencionSueldo: 0, retencionRefrigerio: 0, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 5000, saldo: 25000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
+      { id: 1003, idEmbargo: 3, periodo: '2023-11', sueldo: 60000, refrigerio: 4000, retencionSueldo: 4000, retencionRefrigerio: 1000, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 5000, saldo: 25000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
     ],
   },
   {
@@ -244,11 +242,11 @@ const mockEmbargos: MockEmbargo[] = [
     secretariaAgente: 'SALUD',
     cargo: 'ENFERMERA',
     retenciones: [
-      { id: 1004, idEmbargo: 4, periodo: '2022-07', sueldo: 70000, refrigerio: 3000, retencionSueldo: 0, retencionRefrigerio: 0, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 4000, saldo: 16000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
-      { id: 1005, idEmbargo: 4, periodo: '2022-08', sueldo: 70000, refrigerio: 3000, retencionSueldo: 0, retencionRefrigerio: 0, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 4000, saldo: 12000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
-      { id: 1006, idEmbargo: 4, periodo: '2022-09', sueldo: 70000, refrigerio: 3000, retencionSueldo: 0, retencionRefrigerio: 0, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 4000, saldo: 8000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
-      { id: 1007, idEmbargo: 4, periodo: '2022-10', sueldo: 70000, refrigerio: 3000, retencionSueldo: 0, retencionRefrigerio: 0, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 4000, saldo: 4000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
-      { id: 1008, idEmbargo: 4, periodo: '2022-11', sueldo: 70000, refrigerio: 3000, retencionSueldo: 0, retencionRefrigerio: 0, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 4000, saldo: 0, devolucion: 0, observaciones: 'Último mes', fechaRegistro: hoy },
+      { id: 1004, idEmbargo: 4, periodo: '2022-07', sueldo: 70000, refrigerio: 3000, retencionSueldo: 3200, retencionRefrigerio: 800, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 4000, saldo: 16000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
+      { id: 1005, idEmbargo: 4, periodo: '2022-08', sueldo: 70000, refrigerio: 3000, retencionSueldo: 3200, retencionRefrigerio: 800, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 4000, saldo: 12000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
+      { id: 1006, idEmbargo: 4, periodo: '2022-09', sueldo: 70000, refrigerio: 3000, retencionSueldo: 3200, retencionRefrigerio: 800, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 4000, saldo: 8000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
+      { id: 1007, idEmbargo: 4, periodo: '2022-10', sueldo: 70000, refrigerio: 3000, retencionSueldo: 3200, retencionRefrigerio: 800, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 4000, saldo: 4000, devolucion: 0, observaciones: '', fechaRegistro: hoy },
+      { id: 1008, idEmbargo: 4, periodo: '2022-11', sueldo: 70000, refrigerio: 3000, retencionSueldo: 3200, retencionRefrigerio: 800, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: 4000, saldo: 0, devolucion: 0, observaciones: 'Último mes', fechaRegistro: hoy },
     ],
   },
 ]
@@ -259,14 +257,15 @@ function agenteDe(id: number): Empleado | undefined {
   return MOCK_AGENTES.find((a) => a.id === id)
 }
 
+function montoRetenidoMock(r: MockRetencion): number {
+  if (r.retencionMensual > 0) return roundMoney(r.retencionMensual)
+  return roundMoney((r.retencionSueldo || 0) + (r.retencionRefrigerio || 0))
+}
+
 function mapEmbargo(m: MockEmbargo): Embargo {
   const retenciones = [...m.retenciones].sort((a, b) => a.periodo.localeCompare(b.periodo))
   const totalRetenido = roundMoney(
-    retenciones.reduce((acc, r) => {
-      const mensual = r.retencionMensual
-      const desglose = roundMoney((r.sueldo || 0) + (r.refrigerio || 0))
-      return acc + (mensual > 0 ? mensual : desglose)
-    }, 0)
+    retenciones.reduce((acc, r) => acc + montoRetenidoMock(r), 0),
   )
   const totalDevuelto = roundMoney(retenciones.reduce((acc, r) => acc + r.devolucion, 0))
   const ultima = retenciones[retenciones.length - 1]
@@ -341,10 +340,7 @@ function recalcularSaldosMock(idEmbargo: number): number | null {
   if (!m) return null
   let saldo = m.deuda
   for (const r of m.retenciones.sort((a, b) => a.periodo.localeCompare(b.periodo))) {
-    const mensual = r.retencionMensual
-    const desglose = roundMoney((r.sueldo || 0) + (r.refrigerio || 0))
-    const efectiva = mensual > 0 ? mensual : desglose
-    saldo = roundMoney(saldo - efectiva + r.devolucion)
+    saldo = roundMoney(saldo - montoRetenidoMock(r) + r.devolucion)
     r.saldo = saldo
   }
   if (saldo <= 0 && (m.estado === 'ACTIVO' || m.estado === 'ESPERA')) {
@@ -516,15 +512,9 @@ export async function listarRetenciones(idEmbargo: number): Promise<RetencionEmb
     .map((r) => {
       let retencionSueldo = r.retencionSueldo ?? 0
       let retencionRefrigerio = r.retencionRefrigerio ?? 0
-      // Retenciones anteriores al desglose: repartir en proporción a los haberes.
+      // Registros anteriores al desglose manual: el total se muestra en sueldo.
       if (retencionSueldo === 0 && retencionRefrigerio === 0 && r.retencionMensual > 0) {
-        const haberes = roundMoney((r.sueldo || 0) + (r.refrigerio || 0))
-        if (haberes > 0) {
-          retencionSueldo = roundMoney((r.retencionMensual * (r.sueldo || 0)) / haberes)
-          retencionRefrigerio = roundMoney(r.retencionMensual - retencionSueldo)
-        } else {
-          retencionSueldo = r.retencionMensual
-        }
+        retencionSueldo = r.retencionMensual
       }
       return {
         id: r.id,
@@ -553,57 +543,57 @@ export async function crearRetencion(input: RetencionInput): Promise<{ ok: boole
   if (m.retenciones.some((r) => r.periodo === input.periodo)) {
     return { ok: false, error: `Ya existe una retención para ${periodoLabel(input.periodo)}.`, field: 'periodo' }
   }
-  const sueldoNum = parseMoneyInput(input.sueldo)
-  const refrigerioNum = parseMoneyInput(input.refrigerio)
-  if (sueldoNum < 0 || refrigerioNum < 0) {
-    return { ok: false, error: 'El sueldo y el refrigerio no pueden ser negativos.', field: 'sueldo' }
-  }
-  const salarioMinimo = input.salarioMinimo?.trim() ? parseMoneyInput(input.salarioMinimo) : SALARIO_MINIMO_DEFAULT
-  if (salarioMinimo < 0) return { ok: false, error: 'El salario mínimo no puede ser negativo.', field: 'salarioMinimo' }
-  let retencion = parseMoneyInput(input.retencionMensual)
-  if (retencion === 0 && (sueldoNum > 0 || refrigerioNum > 0)) {
-    // Si el operador no define el importe, se toma el cálculo de haberes.
-    retencion = calcularRetencionHaberes(sueldoNum, refrigerioNum, salarioMinimo).retencionMensual
+  let retencionSueldo = parseMoneyInput(input.retencionSueldo)
+  let retencionRefrigerio = parseMoneyInput(input.retencionRefrigerio)
+  if (retencionSueldo < 0 || retencionRefrigerio < 0) {
+    return {
+      ok: false,
+      error: 'Las retenciones de sueldo y refrigerio no pueden ser negativas.',
+      field: 'retencionSueldo',
+    }
   }
   const devolucion = parseMoneyInput(input.devolucion)
-  if (retencion < 0) return { ok: false, error: 'La retención no puede ser negativa.', field: 'retencionMensual' }
   if (devolucion < 0) return { ok: false, error: 'La devolución no puede ser negativa.', field: 'devolucion' }
 
   const saldoPrevio = roundMoney(
     [...m.retenciones]
       .filter((r) => r.periodo < input.periodo)
-      .reduce(
-        (acc, r) =>
-          acc -
-          (r.retencionMensual > 0 ? r.retencionMensual : roundMoney((r.sueldo || 0) + (r.refrigerio || 0))) +
-          r.devolucion,
-        m.deuda,
-      ),
+      .reduce((acc, r) => acc - montoRetenidoMock(r) + r.devolucion, m.deuda),
   )
-  // La retención se ajusta al saldo pendiente, igual que en el modo real.
+  // El total se ajusta al saldo pendiente, primero sueldo y luego refrigerio.
   const saldoDisponible = Math.max(saldoPrevio, 0)
-  if (retencion > saldoDisponible) retencion = roundMoney(saldoDisponible)
+  let retencion = roundMoney(retencionSueldo + retencionRefrigerio)
+  if (retencion > saldoDisponible) {
+    const excedente = roundMoney(retencion - saldoDisponible)
+    if (retencionSueldo >= excedente) {
+      retencionSueldo = roundMoney(retencionSueldo - excedente)
+    } else {
+      const resto = roundMoney(excedente - retencionSueldo)
+      retencionSueldo = 0
+      retencionRefrigerio = roundMoney(Math.max(retencionRefrigerio - resto, 0))
+    }
+    retencion = roundMoney(retencionSueldo + retencionRefrigerio)
+  }
   if (retencion === 0 && devolucion === 0) {
     return {
       ok: false,
       error:
         saldoDisponible <= 0
           ? 'El embargo no tiene saldo pendiente para retener.'
-          : 'Ingrese una retención o una devolución.',
-      field: 'retencionMensual',
+          : 'Ingrese al menos una retención de sueldo o refrigerio.',
+      field: 'retencionSueldo',
     }
   }
 
-  const desglose = repartirRetencion(retencion, sueldoNum, refrigerioNum, salarioMinimo)
   const nueva: MockRetencion = {
     id: ++nextRetencionId,
     idEmbargo: input.idEmbargo,
     periodo: input.periodo,
-    sueldo: sueldoNum,
-    refrigerio: refrigerioNum,
-    retencionSueldo: desglose.retencionSueldo,
-    retencionRefrigerio: desglose.retencionRefrigerio,
-    salarioMinimo,
+    sueldo: 0,
+    refrigerio: 0,
+    retencionSueldo,
+    retencionRefrigerio,
+    salarioMinimo: SALARIO_MINIMO_DEFAULT,
     retencionMensual: retencion,
     saldo: 0,
     devolucion,
@@ -645,49 +635,50 @@ export async function actualizarRetencion(id: number, input: Omit<RetencionInput
   if (owner.retenciones.some((r) => r.periodo === input.periodo && r.id !== id)) {
     return { ok: false, error: `Ya existe una retención para ${periodoLabel(input.periodo)}.`, field: 'periodo' }
   }
-  const sueldoNum = parseMoneyInput(input.sueldo)
-  const refrigerioNum = parseMoneyInput(input.refrigerio)
-  if (sueldoNum < 0 || refrigerioNum < 0) {
-    return { ok: false, error: 'El sueldo y el refrigerio no pueden ser negativos.', field: 'sueldo' }
+  let retencionSueldo = parseMoneyInput(input.retencionSueldo)
+  let retencionRefrigerio = parseMoneyInput(input.retencionRefrigerio)
+  if (retencionSueldo < 0 || retencionRefrigerio < 0) {
+    return {
+      ok: false,
+      error: 'Las retenciones de sueldo y refrigerio no pueden ser negativas.',
+      field: 'retencionSueldo',
+    }
   }
-  const salarioMinimo = input.salarioMinimo?.trim() ? parseMoneyInput(input.salarioMinimo) : SALARIO_MINIMO_DEFAULT
-  if (salarioMinimo < 0) return { ok: false, error: 'El salario mínimo no puede ser negativo.', field: 'salarioMinimo' }
-  let retencion = parseMoneyInput(input.retencionMensual)
-  if (retencion < 0) return { ok: false, error: 'La retención no puede ser negativa.', field: 'retencionMensual' }
   const devolucion = parseMoneyInput(input.devolucion)
   if (devolucion < 0) return { ok: false, error: 'La devolución no puede ser negativa.', field: 'devolucion' }
 
   const saldoPrevio = roundMoney(
     owner.retenciones
       .filter((r) => r.periodo < input.periodo && r.id !== id)
-      .reduce(
-        (acc, r) =>
-          acc -
-          (r.retencionMensual > 0 ? r.retencionMensual : roundMoney((r.sueldo || 0) + (r.refrigerio || 0))) +
-          r.devolucion,
-        owner.deuda,
-      ),
+      .reduce((acc, r) => acc - montoRetenidoMock(r) + r.devolucion, owner.deuda),
   )
   const saldoDisponible = Math.max(saldoPrevio, 0)
-  if (retencion > saldoDisponible) retencion = roundMoney(saldoDisponible)
+  let retencion = roundMoney(retencionSueldo + retencionRefrigerio)
+  if (retencion > saldoDisponible) {
+    const excedente = roundMoney(retencion - saldoDisponible)
+    if (retencionSueldo >= excedente) {
+      retencionSueldo = roundMoney(retencionSueldo - excedente)
+    } else {
+      const resto = roundMoney(excedente - retencionSueldo)
+      retencionSueldo = 0
+      retencionRefrigerio = roundMoney(Math.max(retencionRefrigerio - resto, 0))
+    }
+    retencion = roundMoney(retencionSueldo + retencionRefrigerio)
+  }
   if (retencion === 0 && devolucion === 0) {
     return {
       ok: false,
       error:
         saldoDisponible <= 0
           ? 'El embargo no tiene saldo pendiente para retener.'
-          : 'Ingrese una retención o una devolución.',
-      field: 'retencionMensual',
+          : 'Ingrese al menos una retención de sueldo o refrigerio.',
+      field: 'retencionSueldo',
     }
   }
 
-  const desglose = repartirRetencion(retencion, sueldoNum, refrigerioNum, salarioMinimo)
   found.periodo = input.periodo
-  found.sueldo = sueldoNum
-  found.refrigerio = refrigerioNum
-  found.retencionSueldo = desglose.retencionSueldo
-  found.retencionRefrigerio = desglose.retencionRefrigerio
-  found.salarioMinimo = salarioMinimo
+  found.retencionSueldo = retencionSueldo
+  found.retencionRefrigerio = retencionRefrigerio
   found.retencionMensual = retencion
   found.devolucion = devolucion
   found.observaciones = input.observaciones.trim()
@@ -797,7 +788,7 @@ export async function actualizarEsperas(): Promise<{ ok: boolean; error?: string
 
   for (const m of candidatos) {
     agentes.add(m.idAgente)
-    const saldo = roundMoney(m.retenciones.reduce((acc, r) => acc - r.retencionMensual + r.devolucion, m.deuda))
+    const saldo = roundMoney(m.retenciones.reduce((acc, r) => acc - montoRetenidoMock(r) + r.devolucion, m.deuda))
     const ultima = m.retenciones[m.retenciones.length - 1]
     if (ultima && ultima.saldo !== saldo) ajustados++
     // Da de baja las deudas saldadas y activa la siguiente espera si corresponde.
@@ -822,12 +813,12 @@ export async function imputarPeriodo(periodo: string): Promise<{ ok: boolean; er
   const activos = mockEmbargos.filter((m) => m.estado === 'ACTIVO')
   for (const m of activos) {
     if (m.retenciones.some((r) => r.periodo === periodo)) { omitidas++; continue }
-    const saldo = roundMoney(m.retenciones.reduce((acc, r) => acc - r.retencionMensual + r.devolucion, m.deuda))
+    const saldo = roundMoney(m.retenciones.reduce((acc, r) => acc - montoRetenidoMock(r) + r.devolucion, m.deuda))
     if (saldo <= 0) { omitidas++; continue }
     const base = m.importeMensual > 0 ? m.importeMensual : m.porcentaje > 0 ? (saldo * m.porcentaje) / 100 : saldo
     const retencion = roundMoney(Math.min(base, saldo))
     if (retencion <= 0) { omitidas++; continue }
-    m.retenciones.push({ id: ++nextRetencionId, idEmbargo: m.id, periodo, sueldo: 0, refrigerio: 0, retencionSueldo: 0, retencionRefrigerio: 0, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: retencion, saldo: roundMoney(saldo - retencion), devolucion: 0, observaciones: '', fechaRegistro: hoy })
+    m.retenciones.push({ id: ++nextRetencionId, idEmbargo: m.id, periodo, sueldo: 0, refrigerio: 0, retencionSueldo: retencion, retencionRefrigerio: 0, salarioMinimo: SALARIO_MINIMO_DEFAULT, retencionMensual: retencion, saldo: roundMoney(saldo - retencion), devolucion: 0, observaciones: '', fechaRegistro: hoy })
     recalcularSaldosMock(m.id)
     creadas++
     importeTotal = roundMoney(importeTotal + retencion)
@@ -841,6 +832,13 @@ export async function generarResumen(periodo: string): Promise<{ ok: boolean; er
     const agente = agenteDe(m.idAgente)
     for (const r of m.retenciones) {
       if (r.periodo !== periodo) continue
+      let retencionSueldo = r.retencionSueldo
+      let retencionRefrigerio = r.retencionRefrigerio
+      if (retencionSueldo === 0 && retencionRefrigerio === 0 && r.retencionMensual > 0) {
+        retencionSueldo = r.retencionMensual
+      }
+      const retencionMensual =
+        r.retencionMensual > 0 ? r.retencionMensual : roundMoney(retencionSueldo + retencionRefrigerio)
       filas.push({
         idRetencion: r.id,
         periodo: r.periodo,
@@ -848,9 +846,9 @@ export async function generarResumen(periodo: string): Promise<{ ok: boolean; er
         agente: agente?.nombreCompleto ?? '',
         autos: m.autos,
         expediente: m.expediente,
-        sueldo: r.sueldo,
-        refrigerio: r.refrigerio,
-        retencionMensual: r.retencionMensual,
+        retencionSueldo,
+        retencionRefrigerio,
+        retencionMensual,
         devolucion: r.devolucion,
         saldo: r.saldo,
       })
@@ -865,8 +863,30 @@ export async function exportarResumen(periodo: string): Promise<{ ok: boolean; e
   if (!r.ok) return { ok: false, error: r.error }
   const { toCsv } = await import('@/lib/embargos')
   const contenido = toCsv(
-    ['PERIODO', 'DNI', 'AGENTE', 'EXPEDIENTE', 'AUTOS', 'SUELDO', 'REFRIGERIO', 'RETENCION', 'DEVOLUCION', 'SALDO'],
-    r.filas.map((f) => [periodoLabel(f.periodo), f.dni, f.agente, f.expediente, f.autos, f.sueldo.toFixed(2), f.refrigerio.toFixed(2), f.retencionMensual.toFixed(2), f.devolucion.toFixed(2), f.saldo.toFixed(2)]),
+    [
+      'PERIODO',
+      'DNI',
+      'AGENTE',
+      'EXPEDIENTE',
+      'AUTOS',
+      'RETENCION_SUELDO',
+      'RETENCION_REFRIGERIO',
+      'RETENCION_MENSUAL',
+      'DEVOLUCION',
+      'SALDO',
+    ],
+    r.filas.map((f) => [
+      periodoLabel(f.periodo),
+      f.dni,
+      f.agente,
+      f.expediente,
+      f.autos,
+      f.retencionSueldo.toFixed(2),
+      f.retencionRefrigerio.toFixed(2),
+      f.retencionMensual.toFixed(2),
+      f.devolucion.toFixed(2),
+      f.saldo.toFixed(2),
+    ]),
   )
   return { ok: true, contenido, nombre: `resumen-retenciones-${periodo}.csv` }
 }
@@ -1001,7 +1021,7 @@ export async function verificarIntegridad(): Promise<{ ok: boolean; error?: stri
   const inconsistencias: { idEmbargo: number; dni: string; agente: string; expediente: string; detalle: string }[] = []
   for (const m of mockEmbargos) {
     const embargo = mapEmbargo(m)
-    const saldoCalculado = roundMoney(m.retenciones.reduce((acc, r) => acc - r.retencionMensual + r.devolucion, m.deuda))
+    const saldoCalculado = roundMoney(m.retenciones.reduce((acc, r) => acc - montoRetenidoMock(r) + r.devolucion, m.deuda))
     if (saldoCalculado !== embargo.saldoActual) inconsistencias.push({ idEmbargo: embargo.id, dni: embargo.dni, agente: embargo.agente, expediente: embargo.expediente, detalle: `Saldo registrado ${embargo.saldoActual.toFixed(2)} ≠ saldo calculado ${saldoCalculado.toFixed(2)}.` })
     if (embargo.saldoActual < 0) inconsistencias.push({ idEmbargo: embargo.id, dni: embargo.dni, agente: embargo.agente, expediente: embargo.expediente, detalle: `Saldo negativo (${embargo.saldoActual.toFixed(2)}).` })
     if (embargo.estado === 'ACTIVO' && embargo.cantidadRetenciones === 0) inconsistencias.push({ idEmbargo: embargo.id, dni: embargo.dni, agente: embargo.agente, expediente: embargo.expediente, detalle: 'Embargo activo sin retenciones imputadas.' })

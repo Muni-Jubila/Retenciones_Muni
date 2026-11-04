@@ -164,15 +164,26 @@ export default function ActualizarEmbargos() {
   const descargarResumen = () => {
     if (!resumen) return
     const contenido = toCsv(
-      ['PERIODO', 'DNI', 'AGENTE', 'EXPEDIENTE', 'AUTOS', 'SUELDO', 'REFRIGERIO', 'RETENCION', 'DEVOLUCION', 'SALDO'],
+      [
+        'PERIODO',
+        'DNI',
+        'AGENTE',
+        'EXPEDIENTE',
+        'AUTOS',
+        'RETENCION_SUELDO',
+        'RETENCION_REFRIGERIO',
+        'RETENCION_MENSUAL',
+        'DEVOLUCION',
+        'SALDO',
+      ],
       resumen.map((fila) => [
         periodoLabel(fila.periodo),
         fila.dni,
         fila.agente,
         fila.expediente,
         fila.autos,
-        fila.sueldo.toFixed(2),
-        fila.refrigerio.toFixed(2),
+        fila.retencionSueldo.toFixed(2),
+        fila.retencionRefrigerio.toFixed(2),
         fila.retencionMensual.toFixed(2),
         fila.devolucion.toFixed(2),
         fila.saldo.toFixed(2),
@@ -324,7 +335,7 @@ export default function ActualizarEmbargos() {
         <ActionCard
           icon={<FileSpreadsheet className="h-4 w-4" />}
           title="Emisión resumen"
-          description="Genera el resumen de retenciones del período con sueldo, refrigerio, retención, devolución y saldo. Se puede previsualizar y descargar en CSV."
+          description="Genera el resumen de retenciones del período con retención de sueldo, retención de refrigerio, retención total, devolución y saldo. Se puede previsualizar y descargar en CSV."
           tone="blue"
         >
           <PeriodPicker value={periodo} onChange={setPeriodo} />
@@ -350,12 +361,14 @@ export default function ActualizarEmbargos() {
           </div>
           {resumen && (
             <div className="max-h-52 overflow-auto rounded-lg border border-slate-200">
-              <table className="w-full min-w-[520px] text-[10px]">
+              <table className="w-full min-w-[720px] text-[10px]">
                 <thead className="sticky top-0 bg-slate-100 uppercase tracking-wider text-slate-500">
                   <tr>
                     <th className="px-2 py-1.5 text-left">Agente</th>
                     <th className="px-2 py-1.5 text-left">Exp. Judicial</th>
-                    <th className="px-2 py-1.5 text-right">Retención</th>
+                    <th className="px-2 py-1.5 text-right">Ret. Sueldo</th>
+                    <th className="px-2 py-1.5 text-right">Ret. Refrig.</th>
+                    <th className="px-2 py-1.5 text-right">Retención total</th>
                     <th className="px-2 py-1.5 text-right">Saldo</th>
                   </tr>
                 </thead>
@@ -364,6 +377,8 @@ export default function ActualizarEmbargos() {
                     <tr key={fila.idRetencion}>
                       <td className="px-2 py-1.5 font-semibold text-slate-700">{fila.agente}</td>
                       <td className="px-2 py-1.5 font-mono text-slate-500">{fila.expediente || '—'}</td>
+                      <td className="px-2 py-1.5 text-right font-mono"><Money value={fila.retencionSueldo} /></td>
+                      <td className="px-2 py-1.5 text-right font-mono"><Money value={fila.retencionRefrigerio} /></td>
                       <td className="px-2 py-1.5 text-right font-mono"><Money value={fila.retencionMensual} /></td>
                       <td className="px-2 py-1.5 text-right font-mono text-rose-600"><Money value={fila.saldo} /></td>
                     </tr>

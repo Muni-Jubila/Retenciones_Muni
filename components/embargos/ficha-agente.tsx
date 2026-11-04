@@ -34,17 +34,14 @@ import {
 import { buscarEmpleados, getEmpleadoPorId } from '@/app/actions/empleados'
 import type { Empleado } from '@/lib/empleados'
 import {
-  calcularRetencionHaberes,
   ESTADOS_EMBARGO,
   formatMoney,
   moneyToInput,
   parseMoneyInput,
   periodoActual,
   periodoLabel,
-  repartirRetencion,
   resumenEstados,
   roundMoney,
-  SALARIO_MINIMO_DEFAULT,
   type Embargo,
   type EmbargoInput,
   type EstadoEmbargo,
@@ -109,126 +106,162 @@ function DetailItem({ label, value, className }: { label: string; value: React.R
 
 function RetencionForm({
   initial,
-  saldoBase,
+  deuda,
+  retenciones,
+  periodosOcupados = [],
   saving,
   error,
   onCancel,
   onSubmit,
 }: {
   initial?: RetencionEmbargo | null
-  saldoBase: number
+  deuda: number
+  retenciones: RetencionEmbargo[]
+  periodosOcupados?: string[]
   saving: boolean
   error?: string | null
   onCancel: () => void
   onSubmit: (input: {
     periodo: string
-    sueldo: string
-    refrigerio: string
-    retencionMensual: string
+    retencionSueldo: string
+    retencionRefrigerio: string
     devolucion: string
     observaciones: string
-    salarioMinimo: string
   }) => void
 }) {
-  const saldoDisponible = Math.max(roundMoney(saldoBase), 0)
-  const retencionInicial = initial
-    ? Math.min(initial.retencionMensual || roundMoney(initial.sueldo + initial.refrigerio), saldoDisponible)
-    : 0
+  const calcularSaldo = (periodoConsulta: string) =>
+    roundMoney(
+      retenciones
+        .filter((retencion) => retencion.periodo < periodoConsulta && retencion.id !== initial?.id)
+        .reduce(
+          (acc, retencion) => acc - retencion.retencionMensual + retencion.devolucion,
+          deuda,
+        ),
+    )
 
-  const [periodo, setPeriodo] = useState(initial?.periodo ?? periodoActual())
-  const [sueldo, setSueldo] = useState(initial ? moneyToInput(initial.sueldo) : '')
-  const [refrigerio, setRefrigerio] = useState(initial ? moneyToInput(initial.refrigerio) : '')
-  const [salarioMinimo, setSalarioMinimo] = useState(
-    initial?.salarioMinimo ? moneyToInput(initial.salarioMinimo) : moneyToInput(SALARIO_MINIMO_DEFAULT),
+  const normalizarRetenciones = (sueldo: number, refrigerio: number, saldo: number) => {
+    let sueldoNormalizado = roundMoney(Math.max(sueldo, 0))
+    let refrigerioNormalizado = roundMoney(Math.max(refrigerio, 0))
+    const total = roundMoney(sueldoNormalizado + refrigerioNormalizado)
+    if (total > saldo) {
+      const excedente = roundMoney(total - saldo)
+      if (sueldoNormalizado >= excedente) {
+        sueldoNormalizado = roundMoney(sueldoNormalizado - excedente)
+      } else {
+        const resto = roundMoney(excedente - sueldoNormalizado)
+        sueldoNormalizado = 0
+        refrigerioNormalizado = roundMoney(Math.max(refrigerioNormalizado - resto, 0))
+      }
+    }
+    return { sueldo: sueldoNormalizado, refrigerio: refrigerioNormalizado }
+  }
+
+  const periodoInicial = initial?.periodo ?? periodoActual()
+  const saldoInicial = Math.max(calcularSaldo(periodoInicial), 0)
+
+  // En registros viejos el total puede estar sólo en retencionMensual.
+  const sueldoGuardado = initial
+    ? initial.retencionSueldo > 0 || initial.retencionRefrigerio > 0
+      ? initial.retencionSueldo
+      : initial.retencionMensual
+    : 0
+  const refrigerioGuardado = initial?.retencionRefrigerio ?? 0
+
+  // Si el registro guardado ya supera el saldo, se ajusta primero el sueldo.
+  const inicial = normalizarRetenciones(sueldoGuardado, refrigerioGuardado, saldoInicial)
+
+  const [periodo, setPeriodo] = useState(periodoInicial)
+  const [retencionSueldo, setRetencionSueldo] = useState(
+    initial ? moneyToInput(inicial.sueldo) : '',
   )
-  const [retencion, setRetencion] = useState(initial ? moneyToInput(retencionInicial) : '')
-  const [ajustada, setAjustada] = useState(Boolean(initial && retencionInicial < (initial.retencionMensual || 0)))
+  const [retencionRefrigerio, setRetencionRefrigerio] = useState(
+    initial ? moneyToInput(inicial.refrigerio) : '',
+  )
+  const [ajustada, setAjustada] = useState(
+    Boolean(initial && (inicial.sueldo !== sueldoGuardado || inicial.refrigerio !== refrigerioGuardado)),
+  )
   const [errores, setErrores] = useState<Record<string, string>>({})
 
-  /** Aplica el tope del saldo pendiente al importe que se intenta retener. */
-  const aplicarTope = (valor: string) => {
-    const numero = parseMoneyInput(valor)
-    if (numero > saldoDisponible) {
-      setAjustada(true)
-      return moneyToInput(saldoDisponible)
-    }
-    setAjustada(false)
-    return valor
+  const saldoDisponible = Math.max(calcularSaldo(periodo), 0)
+  const sueldoNum = parseMoneyInput(retencionSueldo)
+  const refrigerioNum = parseMoneyInput(retencionRefrigerio)
+  const totalRetencion = roundMoney(sueldoNum + refrigerioNum)
+  const devolucionActual = initial?.devolucion ?? 0
+  const saldoResultante = roundMoney(Math.max(saldoDisponible - totalRetencion + devolucionActual, 0))
+  const periodoDuplicado = periodosOcupados.includes(periodo.trim())
+
+  const limpiarError = (campo: string) => {
+    setErrores((prev) => {
+      if (!prev[campo]) return prev
+      const next = { ...prev }
+      delete next[campo]
+      return next
+    })
   }
 
-  // Recalcula la retención a partir de los haberes; el operador puede
-  // ajustarla a mano después de escribir sueldo y refrigerio.
-  const recalcularRetencion = (s: string, r: string, minimo: string) => {
-    const calc = calcularRetencionHaberes(parseMoneyInput(s), parseMoneyInput(r), parseMoneyInput(minimo))
-    if (calc.retencionMensual > 0) {
-      setRetencion(aplicarTope(moneyToInput(calc.retencionMensual)))
+  const handlePeriodoChange = (valor: string) => {
+    setPeriodo(valor)
+    limpiarError('periodo')
+    const nuevoSaldo = Math.max(calcularSaldo(valor), 0)
+    if (totalRetencion > nuevoSaldo) {
+      const ajustado = normalizarRetenciones(sueldoNum, refrigerioNum, nuevoSaldo)
+      setRetencionSueldo(moneyToInput(ajustado.sueldo))
+      setRetencionRefrigerio(moneyToInput(ajustado.refrigerio))
+      setAjustada(true)
+    }
+  }
+
+  const handleSueldoChange = (valor: string) => {
+    const maximo = Math.max(saldoDisponible - refrigerioNum, 0)
+    const numero = parseMoneyInput(valor)
+    if (numero > maximo) {
+      setRetencionSueldo(moneyToInput(maximo))
+      setAjustada(true)
     } else {
-      setRetencion('')
+      setRetencionSueldo(valor)
       setAjustada(false)
     }
-    setErrores((prev) => {
-      if (!prev.retencionMensual) return prev
-      const next = { ...prev }
-      delete next.retencionMensual
-      return next
-    })
+    limpiarError('retencionSueldo')
+    limpiarError('retencionRefrigerio')
   }
 
-  const handleSueldoChange = (val: string) => {
-    setSueldo(val)
-    recalcularRetencion(val, refrigerio, salarioMinimo)
+  const handleRefrigerioChange = (valor: string) => {
+    const maximo = Math.max(saldoDisponible - sueldoNum, 0)
+    const numero = parseMoneyInput(valor)
+    if (numero > maximo) {
+      setRetencionRefrigerio(moneyToInput(maximo))
+      setAjustada(true)
+    } else {
+      setRetencionRefrigerio(valor)
+      setAjustada(false)
+    }
+    limpiarError('retencionSueldo')
+    limpiarError('retencionRefrigerio')
   }
-
-  const handleRefrigerioChange = (val: string) => {
-    setRefrigerio(val)
-    recalcularRetencion(sueldo, val, salarioMinimo)
-  }
-
-  const handleSalarioMinimoChange = (val: string) => {
-    setSalarioMinimo(val)
-    recalcularRetencion(sueldo, refrigerio, val)
-  }
-
-  const handleRetencionChange = (val: string) => {
-    setRetencion(aplicarTope(val))
-    setErrores((prev) => {
-      if (!prev.retencionMensual) return prev
-      const next = { ...prev }
-      delete next.retencionMensual
-      return next
-    })
-  }
-
-  const calc = calcularRetencionHaberes(parseMoneyInput(sueldo), parseMoneyInput(refrigerio), parseMoneyInput(salarioMinimo))
-  const retencionNum = Math.min(parseMoneyInput(retencion), saldoDisponible)
-  const devolucionActual = initial?.devolucion ?? 0
-  const saldoResultante = roundMoney(Math.max(saldoDisponible - retencionNum + devolucionActual, 0))
 
   const handleGuardar = () => {
     const next: Record<string, string> = {}
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo.trim())) {
       next.periodo = 'Seleccioná un período válido.'
-    }
-    if (!salarioMinimo.trim() || parseMoneyInput(salarioMinimo) <= 0) {
-      next.salarioMinimo = 'Ingresá un salario mínimo válido.'
+    } else if (periodoDuplicado) {
+      next.periodo = 'Ya existe una retención para ese período.'
     }
     if (saldoDisponible <= 0) {
-      next.retencionMensual = 'El embargo no tiene saldo pendiente para retener.'
-    } else if (retencionNum <= 0) {
-      next.retencionMensual = 'Ingresá un importe de retención mayor a cero.'
+      next.retencionSueldo = 'El embargo no tiene saldo pendiente para retener.'
+    } else if (totalRetencion <= 0) {
+      next.retencionSueldo = 'Ingresá la retención de sueldo o de refrigerio.'
+      next.retencionRefrigerio = 'Ingresá la retención de sueldo o de refrigerio.'
     }
     setErrores(next)
     if (Object.keys(next).length > 0) return
 
     onSubmit({
       periodo,
-      sueldo,
-      refrigerio,
-      retencionMensual: moneyToInput(retencionNum),
+      retencionSueldo: moneyToInput(sueldoNum),
+      retencionRefrigerio: moneyToInput(refrigerioNum),
       // Se conservan los valores que no se editan en esta pantalla.
       devolucion: initial ? String(initial.devolucion) : '0',
       observaciones: initial?.observaciones ?? '',
-      salarioMinimo,
     })
   }
 
@@ -246,74 +279,45 @@ function RetencionForm({
 
       {error && <div className="mb-2"><Banner tone="error">{error}</Banner></div>}
 
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
         <TextField
           label="Período"
           value={periodo}
-          onChange={(value) => {
-            setPeriodo(value)
-            setErrores((prev) => {
-              if (!prev.periodo) return prev
-              const next = { ...prev }
-              delete next.periodo
-              return next
-            })
-          }}
+          onChange={handlePeriodoChange}
           type="month"
-          error={errores.periodo ?? null}
+          hint="Cualquier mes; no se puede repetir."
+          error={errores.periodo ?? (periodoDuplicado ? 'Ya existe una retención para ese período.' : null)}
         />
         <MoneyField
-          label="Sueldo"
-          value={sueldo}
+          label="Retención Sueldo"
+          value={retencionSueldo}
           onChange={handleSueldoChange}
           placeholder="0,00"
           hint="Solo números y coma decimal (máx. 2 centavos)."
+          error={errores.retencionSueldo ?? null}
         />
         <MoneyField
-          label="Refrigerio"
-          value={refrigerio}
+          label="Retención Refrigerio"
+          value={retencionRefrigerio}
           onChange={handleRefrigerioChange}
           placeholder="0,00"
           hint="Solo números y coma decimal (máx. 2 centavos)."
+          error={errores.retencionRefrigerio ?? null}
         />
-        <MoneyField
-          label="Salario mínimo"
-          value={salarioMinimo}
-          onChange={handleSalarioMinimoChange}
-          placeholder={moneyToInput(SALARIO_MINIMO_DEFAULT)}
-          hint="Solo números y coma decimal (máx. 2 centavos)."
-          error={errores.salarioMinimo ?? null}
-        />
-        <MoneyField
-          label="Retención mensual"
-          value={retencion}
-          onChange={handleRetencionChange}
-          placeholder="0,00"
-          hint="Se ajusta automáticamente al saldo pendiente."
-          error={errores.retencionMensual ?? null}
-        />
-      </div>
-
-      {(calc.retencionMensual > 0 || parseMoneyInput(sueldo) > 0 || parseMoneyInput(refrigerio) > 0) && (
-        <div className="mt-2 space-y-0.5 rounded-md border border-blue-100 bg-white px-2.5 py-1.5 text-[10px] leading-relaxed text-slate-500">
-          <p>
-            Sueldo: excedente{' '}
-            <span className="font-mono font-semibold text-slate-700">{formatMoney(calc.excedente)}</span> ×{' '}
-            {calc.porcentaje}% ={' '}
-            <span className="font-mono font-bold text-[#1e3a8a]">{formatMoney(calc.retencionSueldo)}</span>
-          </p>
-          <p>
-            Refrigerio:{' '}
-            <span className="font-mono font-semibold text-slate-700">{formatMoney(parseMoneyInput(refrigerio))}</span> ×{' '}
-            {calc.porcentaje}% ={' '}
-            <span className="font-mono font-bold text-[#1e3a8a]">{formatMoney(calc.retencionRefrigerio)}</span>
-          </p>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            Retención total
+          </span>
+          <div className="rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-right font-mono text-sm font-bold text-[#1e3a8a]">
+            {formatMoney(totalRetencion)}
+          </div>
+          <span className="text-[10px] text-slate-400">Suma de sueldo + refrigerio.</span>
         </div>
-      )}
+      </div>
 
       {ajustada && (
         <p className="mt-2 text-[10px] font-semibold text-amber-700">
-          La retención se ajustó al saldo pendiente: {formatMoney(saldoDisponible)}.
+          El importe se ajustó al saldo pendiente: {formatMoney(saldoDisponible)}.
         </p>
       )}
 
@@ -398,20 +402,6 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
     [embargos, selectedId],
   )
   const resumen = useMemo(() => resumenEstados(embargos), [embargos])
-
-  const saldoBaseRetencion = useMemo(() => {
-    if (!selected) return 0
-    if (!retencionEdit) return selected.saldoActual
-    const anteriores = retenciones.filter(
-      (item) => item.periodo < retencionEdit.periodo && item.id !== retencionEdit.id,
-    )
-    return roundMoney(
-      anteriores.reduce(
-        (acc, item) => acc - item.retencionMensual + item.devolucion,
-        selected.deuda,
-      ),
-    )
-  }, [selected, retencionEdit, retenciones])
 
   const recargarEmbargos = async (idAgente: number, preferId?: number) => {
     const lista = await listarEmbargosDeAgente(idAgente)
@@ -655,12 +645,10 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
 
   const handleSaveRetencion = async (input: {
     periodo: string
-    sueldo: string
-    refrigerio: string
-    retencionMensual: string
+    retencionSueldo: string
+    retencionRefrigerio: string
     devolucion: string
     observaciones: string
-    salarioMinimo: string
   }) => {
     if (!selected || !agente) return
     setSavingRetencion(true)
@@ -1140,7 +1128,11 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                     <RetencionForm
                       key={retencionEdit ? `edit-${retencionEdit.id}` : `new-${selected.id}`}
                       initial={retencionEdit}
-                      saldoBase={saldoBaseRetencion}
+                      deuda={selected.deuda}
+                      retenciones={retenciones}
+                      periodosOcupados={retenciones
+                        .filter((retencion) => retencion.id !== retencionEdit?.id)
+                        .map((retencion) => retencion.periodo)}
                       saving={savingRetencion}
                       error={retencionError}
                       onCancel={() => {
@@ -1170,9 +1162,9 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                           <tr>
                             <th className="w-9 px-2 py-2 text-center">M</th>
                             <th className="px-3 py-2 text-left">Mes Ret.</th>
-                            <th className="px-3 py-2 text-right">Ret. Refrig.</th>
-                            <th className="px-3 py-2 text-right">Ret. Sueldo</th>
-                            <th className="px-3 py-2 text-right">R. Mensual</th>
+                            <th className="px-3 py-2 text-right">Retención Sueldo</th>
+                            <th className="px-3 py-2 text-right">Retención Refrigerio</th>
+                            <th className="px-3 py-2 text-right">Retención total</th>
                             <th className="px-3 py-2 text-right">Saldo</th>
                             <th className="w-16 px-2 py-2 text-center print:hidden">Acc.</th>
                           </tr>
@@ -1186,9 +1178,9 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                                 </span>
                               </td>
                               <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-700">{periodoLabel(retencion.periodo)}</td>
-                              <td className="whitespace-nowrap px-3 py-2 text-right"><Money value={retencion.retencionRefrigerio} /></td>
                               <td className="whitespace-nowrap px-3 py-2 text-right"><Money value={retencion.retencionSueldo} /></td>
-                              <td className="whitespace-nowrap px-3 py-2 text-right font-bold text-[#1e3a8a]"><Money value={retencion.retencionMensual > 0 ? retencion.retencionMensual : roundMoney(retencion.sueldo + retencion.refrigerio)} /></td>
+                              <td className="whitespace-nowrap px-3 py-2 text-right"><Money value={retencion.retencionRefrigerio} /></td>
+                              <td className="whitespace-nowrap px-3 py-2 text-right font-bold text-[#1e3a8a]"><Money value={retencion.retencionMensual > 0 ? retencion.retencionMensual : roundMoney(retencion.retencionSueldo + retencion.retencionRefrigerio)} /></td>
                               <td className="whitespace-nowrap px-3 py-2 text-right font-bold text-rose-600"><Money value={retencion.saldo} /></td>
                               <td className="px-2 py-2 print:hidden">
                                 <div className="flex items-center justify-center gap-1">
@@ -1216,8 +1208,8 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                         <tfoot className="bg-slate-50 text-[10px] font-bold text-slate-600">
                           <tr>
                             <td colSpan={2} className="px-3 py-2 text-right uppercase tracking-wider">Totales</td>
-                            <td className="px-3 py-2 text-right"><Money value={roundMoney(retenciones.reduce((acc, r) => acc + (r.retencionRefrigerio || 0), 0))} /></td>
                             <td className="px-3 py-2 text-right"><Money value={roundMoney(retenciones.reduce((acc, r) => acc + (r.retencionSueldo || 0), 0))} /></td>
+                            <td className="px-3 py-2 text-right"><Money value={roundMoney(retenciones.reduce((acc, r) => acc + (r.retencionRefrigerio || 0), 0))} /></td>
                             <td className="px-3 py-2 text-right"><Money value={selected.totalRetenido} /></td>
                             <td className="px-3 py-2 text-right"><Money value={selected.saldoActual} /></td>
                             <td className="print:hidden" />

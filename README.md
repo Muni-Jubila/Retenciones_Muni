@@ -15,8 +15,8 @@ Nuevo módulo con cuatro pestañas internas, sin saltos de página:
   - Datos del agente y resumen de embargos (activos, en espera, deuda, retenido y saldo).
   - Lista de embargos con la marca legacy **E / A / B / C** (espera, activo, baja, cancelado).
   - Alta y modificación del embargo completo en la misma pantalla: autos, expediente, fecha, cuenta, juez, instancia, nomenclatura, tipo, secretaría judicial, deuda, retención mensual, porcentaje, marca especial, estado y observaciones.
-  - Detalle mensual de retenciones con las columnas del sistema viejo: **Mes Ret., Refrig., Sueldo, R. Mensual, Saldo y Dev.**
-  - Alta, modificación y eliminación de retenciones con recálculo automático de saldos.
+  - Detalle mensual de retenciones con **Retención Sueldo**, **Retención Refrigerio**, retención total y saldo.
+  - Alta, modificación y eliminación de retenciones con carga manual de importes y recálculo automático de saldos.
   - Cambio rápido de estado con captura del motivo de baja/cancelación (alimenta la consulta “Bajas x Ren./Dec.”) e impresión de la ficha.
 
 - **Consultas**
