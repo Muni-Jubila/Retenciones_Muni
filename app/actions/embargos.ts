@@ -11,6 +11,7 @@ import { getDateValidationError } from '@/lib/format-utils'
 import {
   ESTADOS_EMBARGO,
   formatExpedienteRetenciones,
+  formatMoney,
   ordenarEmbargos,
   periodoActual,
   periodoLabel,
@@ -190,7 +191,6 @@ function validarEmbargo(input: EmbargoInput): { error?: string; field?: string }
   }
   if (input.sucursal.trim().length > 50) return { error: 'La sucursal supera los 50 caracteres.', field: 'sucursal' }
   if (input.juez.trim().length > 255) return { error: 'El juzgado supera los 255 caracteres.', field: 'juez' }
-  if (/\d/.test(input.juez)) return { error: 'El Juzgado no puede contener números.', field: 'juez' }
   if (input.secretaria.trim().length > 100) return { error: 'El juez supera los 100 caracteres.', field: 'secretaria' }
   if (/\d/.test(input.secretaria)) return { error: 'El Juez no puede contener números.', field: 'secretaria' }
   if (input.observaciones.trim().length > 1000) return { error: 'Las observaciones superan los 1000 caracteres.', field: 'observaciones' }
@@ -1219,6 +1219,304 @@ export async function generarResumen(periodo: string): Promise<{ ok: boolean; er
   } catch (error) {
     logServerError('[generarResumen] Error:', error)
     return { ok: false, error: 'No se pudo generar el resumen del período.', filas: [] }
+  }
+}
+
+// ---------- Importación de retenciones desde la planilla de liquidación ----------
+
+export interface ImportarPlanillaItem {
+  dni: string
+  retencionSueldo: number
+  retencionRefrigerio: number
+}
+
+export interface ImportarPlanillaResult {
+  ok: boolean
+  error?: string
+  periodo?: string
+  creadas: number
+  actualizadas: number
+  omitidas: number
+  importe: number
+  errores: string[]
+}
+
+async function buscarAgentesPorDnis(dnis: string[]) {
+  const select = {
+    ID_DATOS_PERSONALES_AGENTE_JUBILA: true,
+    DNI_AGENTE: true,
+    APELLIDO_AGENTE: true,
+    SEGUNDO_APELLIDO_AGENTE: true,
+    NOMBRE_AGENTE: true,
+    SEGUNDO_NOMBRE_AGENTE: true,
+  } as const
+
+  let agentes = await prisma.dATOS_PERSONALES_AGENTE_JUBILA.findMany({
+    where: {
+      DNI_AGENTE: { in: dnis },
+      BIT_BORRADO: false,
+    },
+    select,
+  })
+
+  const encontrados = new Set(agentes.map((agente) => (agente.DNI_AGENTE ?? '').replace(/\D/g, '')))
+  const faltantes = dnis.filter((dni) => !encontrados.has(dni))
+  if (faltantes.length > 0) {
+    // Algunos DNI pueden estar guardados con puntos o guiones.
+    const extra = await prisma.dATOS_PERSONALES_AGENTE_JUBILA.findMany({
+      where: {
+        BIT_BORRADO: false,
+        OR: faltantes.map((dni) => ({ DNI_AGENTE: { contains: dni } })),
+      },
+      select,
+    })
+    agentes = [...agentes, ...extra]
+  }
+
+  return agentes
+}
+
+async function buscarEmbargosActivos(idsAgente: number[]) {
+  if (idsAgente.length === 0) return []
+  return prisma.eMBARGO.findMany({
+    where: {
+      ID_AGENTE: { in: idsAgente },
+      BIT_BORRADO: false,
+      ESTADO: 'ACTIVO',
+    },
+    select: {
+      ID_EMBARGO: true,
+      ID_AGENTE: true,
+      EXPEDIENTE: true,
+      DEUDA: true,
+    },
+    orderBy: { ID_EMBARGO: 'asc' },
+  })
+}
+
+type EmbargoPlanilla = Awaited<ReturnType<typeof buscarEmbargosActivos>>[number]
+
+function agruparRetencionesPorEmbargo(
+  retenciones: {
+    ID_RETENCION: number
+    ID_EMBARGO: number
+    PERIODO: string
+    RETENCION_MENSUAL: Prisma.Decimal | number | null
+    RETENCION_SUELDO: Prisma.Decimal | number | null
+    RETENCION_REFRIGERIO: Prisma.Decimal | number | null
+    DEVOLUCION: Prisma.Decimal | number
+  }[],
+) {
+  const porEmbargo = new Map<number, typeof retenciones>()
+  for (const retencion of retenciones) {
+    const lista = porEmbargo.get(retencion.ID_EMBARGO) ?? []
+    lista.push(retencion)
+    porEmbargo.set(retencion.ID_EMBARGO, lista)
+  }
+  return porEmbargo
+}
+
+function saldoPrevioEmbargo(
+  embargo: EmbargoPlanilla,
+  periodo: string,
+  retenciones: ReturnType<typeof agruparRetencionesPorEmbargo>,
+): number {
+  const previas = (retenciones.get(embargo.ID_EMBARGO) ?? []).filter((retencion) => retencion.PERIODO < periodo)
+  return roundMoney(
+    previas.reduce(
+      (acc, retencion) => acc - montoRetenido(retencion) + Number(retencion.DEVOLUCION),
+      Number(embargo.DEUDA),
+    ),
+  )
+}
+
+
+/**
+ * Confirma la importación: crea o actualiza la retención del período para cada
+ * DNI con embargo activo.
+ */
+export async function importarRetencionesPlanilla(
+  periodo: string,
+  items: ImportarPlanillaItem[],
+): Promise<ImportarPlanillaResult> {
+  const vacio: ImportarPlanillaResult = {
+    ok: false,
+    creadas: 0,
+    actualizadas: 0,
+    omitidas: 0,
+    importe: 0,
+    errores: [],
+  }
+
+  if (isEmbargosMock()) {
+    return { ...vacio, error: 'La importación desde Excel no está disponible en modo demo.' }
+  }
+
+  try {
+    const session = await requireAuthenticatedSession()
+    const per = periodo.trim()
+    if (!validarPeriodo(per)) return { ...vacio, error: 'Período inválido (usar aaaa-mm).' }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return { ...vacio, error: 'No hay retenciones para importar.' }
+    }
+
+    const limpios = items
+      .map((item) => ({
+        dni: String(item.dni ?? '').replace(/\D/g, ''),
+        retencionSueldo: Math.max(0, roundMoney(Number(item.retencionSueldo) || 0)),
+        retencionRefrigerio: Math.max(0, roundMoney(Number(item.retencionRefrigerio) || 0)),
+      }))
+      .filter((item) => item.dni && (item.retencionSueldo > 0 || item.retencionRefrigerio > 0))
+
+    if (limpios.length === 0) {
+      return { ...vacio, error: 'No hay retenciones válidas para importar.' }
+    }
+
+    // Cada DNI genera una sola retención por período.
+    const vistos = new Set<string>()
+    const unicos = limpios.filter((item) => {
+      if (vistos.has(item.dni)) return false
+      vistos.add(item.dni)
+      return true
+    })
+
+    const dnis = [...vistos]
+    const agentes = await buscarAgentesPorDnis(dnis)
+    const agentePorDni = new Map<string, (typeof agentes)[number]>()
+    for (const agente of agentes) {
+      agentePorDni.set((agente.DNI_AGENTE ?? '').replace(/\D/g, ''), agente)
+    }
+
+    const embargos = await buscarEmbargosActivos(
+      agentes.map((agente) => agente.ID_DATOS_PERSONALES_AGENTE_JUBILA),
+    )
+    const embargoPorAgente = new Map<number, EmbargoPlanilla>()
+    for (const embargo of embargos) {
+      if (!embargoPorAgente.has(embargo.ID_AGENTE)) embargoPorAgente.set(embargo.ID_AGENTE, embargo)
+    }
+
+    const idsEmbargo = [...embargoPorAgente.values()].map((embargo) => embargo.ID_EMBARGO)
+    const retenciones = idsEmbargo.length
+      ? await prisma.rETENCION_EMBARGO.findMany({
+          where: { ID_EMBARGO: { in: idsEmbargo } },
+          select: {
+            ID_RETENCION: true,
+            ID_EMBARGO: true,
+            PERIODO: true,
+            RETENCION_MENSUAL: true,
+            RETENCION_SUELDO: true,
+            RETENCION_REFRIGERIO: true,
+            DEVOLUCION: true,
+          },
+        })
+      : []
+    const retencionesPorEmbargo = agruparRetencionesPorEmbargo(retenciones)
+
+    let creadas = 0
+    let actualizadas = 0
+    let omitidas = 0
+    let importe = 0
+    const errores: string[] = []
+    const embargosTocados = new Set<number>()
+
+    for (const item of unicos) {
+      const agente = agentePorDni.get(item.dni)
+      if (!agente) {
+        omitidas += 1
+        errores.push(`DNI ${item.dni}: agente no encontrado.`)
+        continue
+      }
+      const embargo = embargoPorAgente.get(agente.ID_DATOS_PERSONALES_AGENTE_JUBILA)
+      if (!embargo) {
+        omitidas += 1
+        errores.push(`DNI ${item.dni}: sin embargo activo.`)
+        continue
+      }
+
+      const total = roundMoney(item.retencionSueldo + item.retencionRefrigerio)
+      const saldoPrevio = saldoPrevioEmbargo(embargo, per, retencionesPorEmbargo)
+      if (total > saldoPrevio) {
+        omitidas += 1
+        errores.push(
+          `DNI ${item.dni}: la retención (${formatMoney(total)}) supera el saldo disponible (${formatMoney(Math.max(saldoPrevio, 0))}).`,
+        )
+        continue
+      }
+
+      const existente = (retencionesPorEmbargo.get(embargo.ID_EMBARGO) ?? []).find(
+        (retencion) => retencion.PERIODO === per,
+      )
+      const saldo = roundMoney(saldoPrevio - total)
+
+      try {
+        if (existente) {
+          await prisma.rETENCION_EMBARGO.update({
+            where: { ID_RETENCION: existente.ID_RETENCION },
+            data: {
+              RETENCION_SUELDO: decimal(item.retencionSueldo),
+              RETENCION_REFRIGERIO: decimal(item.retencionRefrigerio),
+              RETENCION_MENSUAL: decimal(total),
+              DEVOLUCION: decimal(0),
+              SALDO: decimal(saldo),
+            },
+          })
+          actualizadas += 1
+        } else {
+          await prisma.rETENCION_EMBARGO.create({
+            data: {
+              ID_EMBARGO: embargo.ID_EMBARGO,
+              PERIODO: per,
+              RETENCION_SUELDO: decimal(item.retencionSueldo),
+              RETENCION_REFRIGERIO: decimal(item.retencionRefrigerio),
+              RETENCION_MENSUAL: decimal(total),
+              DEVOLUCION: decimal(0),
+              SALDO: decimal(saldo),
+              OBSERVACIONES: 'Importado desde planilla de liquidación.',
+              USUARIO_CREACION: session.userId,
+            },
+          })
+          creadas += 1
+        }
+
+        // Mantener el estado del embargo al día (deuda saldada / siguiente espera).
+        embargosTocados.add(embargo.ID_EMBARGO)
+        importe = roundMoney(importe + total)
+
+        // Actualizar los saldos en memoria para la próxima fila del mismo mes.
+        const lista = retencionesPorEmbargo.get(embargo.ID_EMBARGO) ?? []
+        if (existente) {
+          existente.RETENCION_MENSUAL = decimal(total)
+          existente.RETENCION_SUELDO = decimal(item.retencionSueldo)
+          existente.RETENCION_REFRIGERIO = decimal(item.retencionRefrigerio)
+          existente.DEVOLUCION = decimal(0)
+        } else {
+          lista.push({
+            ID_RETENCION: 0,
+            ID_EMBARGO: embargo.ID_EMBARGO,
+            PERIODO: per,
+            RETENCION_MENSUAL: decimal(total),
+            RETENCION_SUELDO: decimal(item.retencionSueldo),
+            RETENCION_REFRIGERIO: decimal(item.retencionRefrigerio),
+            DEVOLUCION: decimal(0),
+          })
+        }
+        retencionesPorEmbargo.set(embargo.ID_EMBARGO, lista)
+      } catch (error) {
+        logServerError('[importarRetencionesPlanilla] Error al guardar:', error)
+        omitidas += 1
+        errores.push(`DNI ${item.dni}: no se pudo guardar la retención.`)
+      }
+    }
+
+    for (const idEmbargo of embargosTocados) {
+      await recalcularSaldos(idEmbargo)
+    }
+
+    return { ok: true, periodo: per, creadas, actualizadas, omitidas, importe, errores }
+  } catch (error) {
+    logServerError('[importarRetencionesPlanilla] Error:', error)
+    return { ...vacio, error: 'No se pudieron importar las retenciones.' }
   }
 }
 

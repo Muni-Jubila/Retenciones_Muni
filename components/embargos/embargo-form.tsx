@@ -141,7 +141,6 @@ export default function EmbargoForm({
     if (form.cuenta.trim() && !/^\d{1,8}$/.test(form.cuenta.trim())) {
       next.cuenta = 'Solo números, máximo 8 dígitos.'
     }
-    if (/\d/.test(form.juez)) next.juez = 'El Juzgado no puede contener números.'
     if (/\d/.test(form.secretaria)) next.secretaria = 'El Juez no puede contener números.'
     const deuda = parseMoneyInput(form.deuda)
     if (deuda < 0) next.deuda = 'La deuda no puede ser negativa.'
@@ -304,15 +303,7 @@ export default function EmbargoForm({
             <TextField
               label="Juzgado"
               value={form.juez}
-              onChange={(value) =>
-                updateMascara(
-                  'juez',
-                  value,
-                  formatLetrasSinNumeros(value).slice(0, 255),
-                  'El Juzgado solo admite letras, sin números.',
-                  /\d/.test(value),
-                )
-              }
+              onChange={(value) => update('juez', value)}
               placeholder="Juzgado / organismo"
               maxLength={255}
               error={errorDe('juez')}

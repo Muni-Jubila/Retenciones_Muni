@@ -37,6 +37,7 @@ import {
   type ResumenRetencion,
 } from '@/lib/embargos'
 import { Banner, ConfirmDialog, Money, TextField } from '@/components/embargos/ui'
+import ImportarRetencionesPlanilla from '@/components/embargos/importar-retenciones-planilla'
 
 function ActionCard({
   icon,
@@ -447,6 +448,8 @@ export default function ActualizarEmbargos() {
           </p>
         </ActionCard>
       </div>
+
+      <ImportarRetencionesPlanilla />
 
       {/* Eliminar registro */}
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">

@@ -26,6 +26,7 @@ Nuevo módulo con cuatro pestañas internas, sin saltos de página:
 
 - **Actualizar**
   - Actualizar esperas y saldos.
+  - Importar la planilla de liquidación en Excel: filtra los procesos de Sueldo y Refrigerio REM con código 8500 (Embargos Varios), muestra la vista previa y crea o actualiza las retenciones del período.
   - Imputar sueldo / refrigerio por período.
   - Emisión de resumen con previsualización y descarga CSV.
   - Generación de archivo de liquidación (reemplazo del “disquete”).

@@ -361,6 +361,8 @@ function extractSucursal(text: string): string {
 
 function extractTribunal(text: string): string {
   const patterns = [
+    // "…que se tramitan ante esta TGA CP - UNIDAD DE EJECUCION JUEZ 53… se ha resuelto…"
+    /que\s+(?:se\s+)?tramitan\s+(?:en|ante|por\s+ante)\s+(?:esta|este|el)\s+(.+?)\s+(?:se\s+ha\s+resuelto|secretar[ií]a|a\s+cargo)/i,
     /que\s+se\s+tramitan\s+en\s+(?:esta|este)\s+(.+?)\s+se\s+ha\s+resuelto/i,
     /que\s+se\s+tramitan\s+por\s+ante\s+(?:el|este)\s+(.+?)\s+(?:secretar|se\s+ha\s+resuelto|a\s+cargo)/i,
     /que\s+tramitan\s+por\s+ante\s+(?:el|este)\s+(.+?)\s+(?:secretar|a\s+cargo)/i,
