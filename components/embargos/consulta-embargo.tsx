@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { FileText, Loader2, Users, X } from 'lucide-react'
+import { Document, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer'
 import { listarRetenciones } from '@/app/actions/embargos'
 import {
   ESTADOS_EMBARGO,
@@ -23,13 +24,9 @@ interface ConsultaEmbargoProps {
 
 type Alcance = 'SELECCIONADO' | 'ACTIVO_ESPERA' | 'TODOS'
 
-function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
+interface DatosEmbargo {
+  embargo: Embargo
+  retenciones: RetencionEmbargo[]
 }
 
 function fechaHora(): string {
@@ -63,9 +60,8 @@ function ordenarActivosEspera(embargos: Embargo[]): Embargo[] {
     })
 }
 
-function datoHtml(label: string, value: unknown): string {
-  const texto = String(value ?? '').trim()
-  return `<div class="dato"><span>${escapeHtml(label)}</span><strong>${texto ? escapeHtml(texto) : '—'}</strong></div>`
+function estadoLabel(estado: string): string {
+  return ESTADOS_EMBARGO.find((item) => item.value === estado)?.label ?? estado
 }
 
 function promedioMensual(retenciones: RetencionEmbargo[]): number {
@@ -77,9 +73,311 @@ function promedioMensual(retenciones: RetencionEmbargo[]): number {
   return roundMoney(total / retenciones.length)
 }
 
-function retencionesHtml(retenciones: RetencionEmbargo[]): string {
+const styles = StyleSheet.create({
+  page: {
+    paddingTop: 24,
+    paddingBottom: 24,
+    paddingHorizontal: 28,
+    fontFamily: 'Helvetica',
+    fontSize: 9,
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  org: {
+    fontSize: 11.5,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  area: {
+    fontSize: 8.5,
+    color: '#475569',
+    marginTop: 2,
+  },
+  meta: {
+    alignItems: 'flex-end',
+  },
+  metaStrong: {
+    fontSize: 8.5,
+    fontWeight: 'bold',
+    color: '#475569',
+  },
+  metaText: {
+    fontSize: 8,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#172554',
+    marginTop: 4,
+  },
+  line: {
+    borderBottomWidth: 2.5,
+    borderBottomColor: '#0f172a',
+    marginTop: 3,
+    marginBottom: 10,
+  },
+  agentCard: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    backgroundColor: '#f8fafc',
+    padding: 10,
+    marginBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardTitle: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#172554',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  agentGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  agentField: {
+    width: '33.33%',
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 30,
+  },
+  fieldLabel: {
+    fontSize: 6.5,
+    fontWeight: 'bold',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
+  fieldValue: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#0f172a',
+    textAlign: 'center',
+    marginTop: 1,
+  },
+  embargo: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  embargoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    paddingBottom: 6,
+    marginBottom: 6,
+  },
+  embargoHeaderLeft: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  embargoTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#000000',
+  },
+  autos: {
+    fontSize: 8.5,
+    color: '#475569',
+    marginTop: 2,
+  },
+  estadoWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  estadoLabel: {
+    fontSize: 8.5,
+    fontWeight: 'bold',
+    color: '#475569',
+    textTransform: 'uppercase',
+    marginRight: 4,
+  },
+  estadoBadge: {
+    borderWidth: 1,
+    borderColor: '#93c5fd',
+    borderRadius: 20,
+    backgroundColor: '#eff6ff',
+    color: '#1e3a8a',
+    fontSize: 8.5,
+    fontWeight: 'bold',
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    minWidth: 56,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  dataGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  dataCard: {
+    width: '31%',
+    marginHorizontal: 3,
+    marginBottom: 5,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 7,
+    paddingVertical: 6,
+    paddingHorizontal: 5,
+    minHeight: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  totalsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  totalCard: {
+    width: '30%',
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 6,
+    backgroundColor: '#f8fafc',
+    paddingVertical: 5,
+    paddingHorizontal: 5,
+    minHeight: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  obsCard: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 7,
+    padding: 7,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  obsLabel: {
+    fontSize: 7,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
+  obsText: {
+    fontSize: 8.5,
+    color: '#334155',
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  detailTitle: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+    letterSpacing: 0.4,
+  },
+  table: {
+    width: '94%',
+    alignSelf: 'center',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#1e3a8a',
+  },
+  th: {
+    color: '#ffffff',
+    fontSize: 6.5,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    paddingVertical: 3,
+    textTransform: 'uppercase',
+  },
+  tr: {
+    flexDirection: 'row',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e2e8f0',
+  },
+  trAlt: {
+    backgroundColor: '#f8fafc',
+  },
+  td: {
+    fontSize: 7.5,
+    color: '#0f172a',
+    textAlign: 'center',
+    paddingVertical: 3,
+  },
+  tfoot: {
+    flexDirection: 'row',
+    backgroundColor: '#eef2ff',
+    borderTopWidth: 1.5,
+    borderTopColor: '#1e3a8a',
+  },
+  tf: {
+    fontSize: 7.5,
+    fontWeight: 'bold',
+    color: '#0f172a',
+    textAlign: 'center',
+    paddingVertical: 3,
+  },
+  empty: {
+    fontSize: 8,
+    color: '#64748b',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    marginVertical: 6,
+  },
+})
+
+function Dato({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.agentField}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <Text style={styles.fieldValue}>{value || '—'}</Text>
+    </View>
+  )
+}
+
+function TarjetaDato({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.dataCard}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <Text style={styles.fieldValue}>{value || '—'}</Text>
+    </View>
+  )
+}
+
+function TarjetaTotal({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.totalCard}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <Text style={styles.fieldValue}>{value}</Text>
+    </View>
+  )
+}
+
+function TablaRetenciones({ retenciones }: { retenciones: RetencionEmbargo[] }) {
   if (retenciones.length === 0) {
-    return '<p class="vacio">Sin retenciones registradas para este embargo.</p>'
+    return <Text style={styles.empty}>Sin retenciones registradas para este embargo.</Text>
   }
 
   const totalSueldo = retenciones.reduce((acc, item) => acc + item.retencionSueldo, 0)
@@ -90,157 +388,125 @@ function retencionesHtml(retenciones: RetencionEmbargo[]): string {
   )
   const ultimoSaldo = retenciones[retenciones.length - 1]?.saldo ?? 0
 
-  const filas = retenciones
-    .map(
-      (item) => `<tr>
-        <td>${escapeHtml(periodoLabel(item.periodo))}</td>
-        <td class="num">${escapeHtml(formatMoney(item.retencionSueldo))}</td>
-        <td class="num">${escapeHtml(formatMoney(item.retencionRefrigerio))}</td>
-        <td class="num">${escapeHtml(formatMoney(item.retencionMensual || item.retencionSueldo + item.retencionRefrigerio))}</td>
-        <td class="num">${escapeHtml(formatMoney(item.saldo))}</td>
-      </tr>`,
-    )
-    .join('')
+  const columnas = [
+    { label: 'Mes', width: '20%' },
+    { label: 'Ret. Sueldo', width: '20%' },
+    { label: 'Ret. Refrigerio', width: '24%' },
+    { label: 'Ret. Total', width: '18%' },
+    { label: 'Saldo', width: '18%' },
+  ]
 
-  return `<table>
-    <thead>
-      <tr>
-        <th>Mes</th>
-        <th class="num">Ret. Sueldo</th>
-        <th class="num">Ret. Refrigerio</th>
-        <th class="num">Ret. Total</th>
-        <th class="num">Saldo</th>
-      </tr>
-    </thead>
-    <tbody>${filas}</tbody>
-    <tfoot>
-      <tr>
-        <td>Totales</td>
-        <td class="num">${escapeHtml(formatMoney(totalSueldo))}</td>
-        <td class="num">${escapeHtml(formatMoney(totalRefrigerio))}</td>
-        <td class="num">${escapeHtml(formatMoney(totalRetenido))}</td>
-        <td class="num">${escapeHtml(formatMoney(ultimoSaldo))}</td>
-      </tr>
-    </tfoot>
-  </table>`
+  return (
+    <View style={styles.table}>
+      <View style={styles.tableHeader}>
+        {columnas.map((columna) => (
+          <Text key={columna.label} style={[styles.th, { width: columna.width }]}>
+            {columna.label}
+          </Text>
+        ))}
+      </View>
+      {retenciones.map((item, index) => (
+        <View key={item.id} style={[styles.tr, index % 2 === 1 ? styles.trAlt : {}]}>
+          <Text style={[styles.td, { width: columnas[0].width }]}>{periodoLabel(item.periodo)}</Text>
+          <Text style={[styles.td, { width: columnas[1].width }]}>{formatMoney(item.retencionSueldo)}</Text>
+          <Text style={[styles.td, { width: columnas[2].width }]}>{formatMoney(item.retencionRefrigerio)}</Text>
+          <Text style={[styles.td, { width: columnas[3].width }]}>
+            {formatMoney(item.retencionMensual || item.retencionSueldo + item.retencionRefrigerio)}
+          </Text>
+          <Text style={[styles.td, { width: columnas[4].width }]}>{formatMoney(item.saldo)}</Text>
+        </View>
+      ))}
+      <View style={styles.tfoot}>
+        <Text style={[styles.tf, { width: columnas[0].width }]}>Totales</Text>
+        <Text style={[styles.tf, { width: columnas[1].width }]}>{formatMoney(totalSueldo)}</Text>
+        <Text style={[styles.tf, { width: columnas[2].width }]}>{formatMoney(totalRefrigerio)}</Text>
+        <Text style={[styles.tf, { width: columnas[3].width }]}>{formatMoney(totalRetenido)}</Text>
+        <Text style={[styles.tf, { width: columnas[4].width }]}>{formatMoney(ultimoSaldo)}</Text>
+      </View>
+    </View>
+  )
 }
 
-function embargoHtml(
-  embargo: Embargo,
-  retenciones: RetencionEmbargo[],
-  index: number,
-  saltoPagina: boolean,
-): string {
-  const estado = ESTADOS_EMBARGO.find((item) => item.value === embargo.estado)?.label ?? embargo.estado
-  const expRet = embargo.expedienteRetenciones || 's/n'
-  const promedio = promedioMensual(retenciones)
+function ReportePdf({ agente, datos }: { agente: Empleado; datos: DatosEmbargo[] }) {
+  return (
+    <Document>
+      <Page size="A4" style={styles.page}>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.org}>Subsecretaría de Capital Humano</Text>
+            <Text style={styles.area}>Área Retenciones</Text>
+          </View>
+          <View style={styles.meta}>
+            <Text style={styles.metaStrong}>Consulta de Embargos</Text>
+            <Text style={styles.metaText}>{fechaHora()}</Text>
+          </View>
+        </View>
 
-  return `<section class="embargo${saltoPagina ? ' salto-pagina' : ''}">
-    <div class="embargo-head">
-      <div>
-        <h2>Embargo ${index + 1} — Exp. Retenciones N° ${escapeHtml(expRet)}</h2>
-        <p>${escapeHtml(embargo.autos || 'Sin autos')}</p>
-      </div>
-      <div class="estado-wrap">
-        <span class="estado-label">Estado:</span>
-        <span class="estado">${escapeHtml(estado)}</span>
-      </div>
-    </div>
-    <div class="grid">
-      ${datoHtml('Expediente Judicial N°', embargo.expediente)}
-      ${datoHtml('Fecha expediente', embargo.fechaExpediente)}
-      ${datoHtml('Cuenta N°', embargo.cuenta)}
-      ${datoHtml('Sucursal', embargo.sucursal)}
-      ${datoHtml('Juzgado', embargo.juez)}
-      ${datoHtml('Juez', embargo.secretaria)}
-      ${datoHtml('Deuda', formatMoney(embargo.deuda))}
-      ${datoHtml('Retención Mensual Promedio', formatMoney(promedio))}
-      ${datoHtml('Fecha de alta', embargo.fechaAlta)}
-      ${datoHtml('Fecha de baja', embargo.fechaBaja)}
-      ${datoHtml('Motivo de baja', embargo.motivoBaja)}
-    </div>
-    <div class="totales">
-      <div><span>Total retenido</span><strong>${escapeHtml(formatMoney(embargo.totalRetenido))}</strong></div>
-      <div><span>Saldo pendiente</span><strong>${escapeHtml(formatMoney(embargo.saldoActual))}</strong></div>
-    </div>
-    <p class="obs"><span>Observaciones:</span> ${escapeHtml(embargo.observaciones || '—')}</p>
-    <h3>Detalle de retenciones</h3>
-    ${retencionesHtml(retenciones)}
-  </section>`
-}
+        <Text style={styles.title}>Consulta de Embargos por Agente</Text>
+        <View style={styles.line} />
 
-function buildHtml(agente: Empleado, bloques: string): string {
-  return `<div class="reporte">
-  <style>
-    @page { size: A4 portrait; margin: 10mm; }
-    * { box-sizing: border-box; }
-    body { margin: 0; background: #ffffff; }
-    .reporte { width: 190mm; font-family: Arial, Helvetica, sans-serif; color: #0f172a; font-size: 10.5px; }
-    .top { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 6px; }
-    .org { margin: 0; font-size: 14px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; letter-spacing: .04em; }
-    .area { margin: 2px 0 0; color: #475569; font-size: 10px; }
-    .meta { text-align: right; color: #475569; font-size: 9.5px; line-height: 1.5; }
-    h1 { font-size: 17px; margin: 6px 0 4px; color: #172554; }
-    .linea { border-top: 3px solid #0f172a; margin-bottom: 12px; }
-    h2 { font-size: 12.5px; margin: 0; color: #172554; }
-    h3 { font-size: 10px; margin: 12px 0 5px; color: #1e3a8a; text-transform: uppercase; letter-spacing: .05em; }
-    .card { border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 14px; background: #f8fafc; }
-    .card h2 { margin-bottom: 7px; }
-    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 12px; }
-    .dato { min-width: 0; }
-    .dato span { display: block; color: #64748b; font-size: 7.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
-    .dato strong { display: block; margin-top: 1px; font-size: 10px; font-weight: 600; word-break: break-word; }
-    .embargo { border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 14px; background: #ffffff; page-break-inside: avoid; }
-    .salto-pagina { page-break-before: always; }
-    .embargo-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 7px; margin-bottom: 8px; }
-    .embargo-head p { margin: 3px 0 0; color: #475569; font-size: 9.5px; }
-    .estado-wrap { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-    .estado-label { color: #475569; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
-    .estado { border: 1px solid #93c5fd; background: #eff6ff; color: #1e3a8a; border-radius: 999px; padding: 4px 10px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; }
-    .totales { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; }
-    .totales div { border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 6px; padding: 6px 8px; }
-    .totales span { display: block; color: #64748b; font-size: 7.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
-    .totales strong { display: block; margin-top: 2px; font-size: 10.5px; }
-    .obs { margin: 8px 0 0; color: #334155; font-size: 9.5px; line-height: 1.4; }
-    .obs span { font-weight: 700; color: #1e3a8a; }
-    table { width: 100%; border-collapse: collapse; font-size: 9px; }
-    th { background: #1e3a8a; color: #ffffff; text-align: left; padding: 4px 5px; font-size: 7.5px; text-transform: uppercase; letter-spacing: .04em; }
-    td { border-bottom: 1px solid #e2e8f0; padding: 4px 5px; }
-    tbody tr:nth-child(even) { background: #f8fafc; }
-    tfoot td { background: #eef2ff; font-weight: 700; border-top: 2px solid #1e3a8a; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .vacio { color: #64748b; font-style: italic; padding: 6px 0; }
-    .footer { margin-top: 14px; border-top: 1px solid #cbd5e1; padding-top: 6px; color: #64748b; font-size: 8px; display: flex; justify-content: space-between; }
-  </style>
-    <div class="top">
-      <div>
-        <p class="org">Subsecretaría de Capital Humano</p>
-        <p class="area">Área Retenciones</p>
-      </div>
-      <div class="meta">
-        <div><strong>Consulta de Embargos</strong></div>
-        <div>${escapeHtml(fechaHora())}</div>
-      </div>
-    </div>
-    <h1>Consulta de Embargos por Agente</h1>
-    <div class="linea"></div>
-    <section class="card">
-      <h2>Datos del agente</h2>
-      <div class="grid">
-        ${datoHtml('Nombre completo', agente.nombreCompleto)}
-        ${datoHtml('DNI', agente.dni)}
-        ${datoHtml('CUIL', agente.cuil)}
-        ${datoHtml('Programa', agente.programa)}
-        ${datoHtml('Cargo', agente.cargo)}
-        ${datoHtml('Repartición', agente.secretaria)}
-      </div>
-    </section>
-    ${bloques}
-    <div class="footer">
-      <span>Sistema de Retenciones — Municipalidad de Córdoba</span>
-      <span>Documento generado automáticamente</span>
-    </div>
-  </div>`
+        <View style={styles.agentCard}>
+          <Text style={styles.cardTitle}>Datos del agente</Text>
+          <View style={styles.agentGrid}>
+            <Dato label="Nombre completo" value={agente.nombreCompleto} />
+            <Dato label="DNI" value={agente.dni} />
+            <Dato label="CUIL" value={agente.cuil} />
+            <Dato label="Programa" value={agente.programa} />
+            <Dato label="Cargo" value={agente.cargo} />
+            <Dato label="Repartición" value={agente.secretaria} />
+          </View>
+        </View>
+
+        {datos.map((item, index) => {
+          const { embargo, retenciones } = item
+          const promedio = promedioMensual(retenciones)
+          return (
+            <View key={embargo.id} break={index > 0} wrap={false} style={styles.embargo}>
+              <View style={styles.embargoHeader}>
+                <View style={styles.embargoHeaderLeft}>
+                  <Text style={styles.embargoTitle}>
+                    Embargo {index + 1} — Exp. Retenciones N° {embargo.expedienteRetenciones || 's/n'}
+                  </Text>
+                  <Text style={styles.autos}>{embargo.autos || 'Sin autos'}</Text>
+                </View>
+                <View style={styles.estadoWrap}>
+                  <Text style={styles.estadoLabel}>Estado:</Text>
+                  <Text style={styles.estadoBadge}>{estadoLabel(embargo.estado)}</Text>
+                </View>
+              </View>
+
+              <View style={styles.dataGrid}>
+                <TarjetaDato label="Expediente Judicial N°" value={embargo.expediente} />
+                <TarjetaDato label="Fecha expediente" value={embargo.fechaExpediente} />
+                <TarjetaDato label="Cuenta N°" value={embargo.cuenta} />
+                <TarjetaDato label="Sucursal" value={embargo.sucursal} />
+                <TarjetaDato label="Juzgado" value={embargo.juez} />
+                <TarjetaDato label="Juez" value={embargo.secretaria} />
+                <TarjetaDato label="Retención Mensual Promedio" value={formatMoney(promedio)} />
+                <TarjetaDato label="Fecha de alta" value={embargo.fechaAlta} />
+                <TarjetaDato label="Fecha de baja" value={embargo.fechaBaja} />
+                <TarjetaDato label="Motivo de baja" value={embargo.motivoBaja} />
+              </View>
+
+              <View style={styles.totalsRow}>
+                <TarjetaTotal label="Total retenido" value={formatMoney(embargo.totalRetenido)} />
+                <TarjetaTotal label="Deuda" value={formatMoney(embargo.deuda)} />
+                <TarjetaTotal label="Saldo pendiente" value={formatMoney(embargo.saldoActual)} />
+              </View>
+
+              <View style={styles.obsCard}>
+                <Text style={styles.obsLabel}>Observaciones</Text>
+                <Text style={styles.obsText}>{embargo.observaciones || '—'}</Text>
+              </View>
+
+              <Text style={styles.detailTitle}>Detalle de retenciones</Text>
+              <TablaRetenciones retenciones={retenciones} />
+            </View>
+          )
+        })}
+      </Page>
+    </Document>
+  )
 }
 
 export default function ConsultaEmbargo({ open, agente, embargos, selected, onClose }: ConsultaEmbargoProps) {
@@ -273,41 +539,17 @@ export default function ConsultaEmbargo({ open, agente, embargos, selected, onCl
         })),
       )
 
-      const bloques = datos
-        .map((item, index) => embargoHtml(item.embargo, item.retenciones, index, index > 0))
-        .join('')
-      const html = buildHtml(agente, bloques)
-
-      const mod = await import('html2pdf.js')
-      const html2pdf = ((mod as { default?: unknown }).default ?? mod) as any
       const sufijo =
         alcance === 'SELECCIONADO' ? 'seleccionado' : alcance === 'ACTIVO_ESPERA' ? 'activos-espera' : 'todos'
-
-      const contenedor = document.createElement('div')
-      contenedor.style.position = 'fixed'
-      contenedor.style.left = '-10000px'
-      contenedor.style.top = '0'
-      contenedor.style.width = '210mm'
-      contenedor.style.background = '#ffffff'
-      contenedor.innerHTML = html
-      document.body.appendChild(contenedor)
-
-      try {
-        const objetivo = contenedor.firstElementChild as HTMLElement
-        await html2pdf()
-          .set({
-            margin: 10,
-            filename: `consulta-embargos-${agente.dni || 'agente'}-${sufijo}.pdf`,
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false },
-            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-            pagebreak: { mode: ['css', 'legacy'], avoid: ['section.embargo', 'tr'] },
-          } as any)
-          .from(objetivo)
-          .save()
-      } finally {
-        document.body.removeChild(contenedor)
-      }
+      const blob = await pdf(<ReportePdf agente={agente} datos={datos} />).toBlob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `consulta-embargos-${agente.dni || 'agente'}-${sufijo}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
 
       setLoading(false)
       onClose()
@@ -319,8 +561,8 @@ export default function ConsultaEmbargo({ open, agente, embargos, selected, onCl
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3">
           <div>
             <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800">
               <FileText className="h-4 w-4 text-[#1e3a8a]" />
@@ -340,12 +582,12 @@ export default function ConsultaEmbargo({ open, agente, embargos, selected, onCl
           </button>
         </div>
 
-        <div className="space-y-2.5 p-5">
+        <div className="space-y-2 p-4">
           <button
             type="button"
             onClick={() => void consultar('SELECCIONADO')}
             disabled={!selected || loading}
-            className="flex w-full items-center gap-2 rounded-lg bg-[#1e3a8a] px-4 py-3 text-left text-xs font-semibold text-white transition hover:bg-[#172554] disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center gap-2 rounded-lg bg-[#1e3a8a] px-4 py-2.5 text-left text-xs font-semibold text-white transition hover:bg-[#172554] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <FileText className="h-4 w-4 flex-shrink-0" />
             <span>
@@ -360,7 +602,7 @@ export default function ConsultaEmbargo({ open, agente, embargos, selected, onCl
             type="button"
             onClick={() => void consultar('ACTIVO_ESPERA')}
             disabled={activosEspera.length === 0 || loading}
-            className="flex w-full items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-left text-xs font-semibold text-[#1e3a8a] transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-left text-xs font-semibold text-[#1e3a8a] transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Users className="h-4 w-4 flex-shrink-0" />
             <span>
@@ -376,7 +618,7 @@ export default function ConsultaEmbargo({ open, agente, embargos, selected, onCl
             type="button"
             onClick={() => void consultar('TODOS')}
             disabled={embargos.length === 0 || loading}
-            className="flex w-full items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-3 text-left text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-left text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <FileText className="h-4 w-4 flex-shrink-0 text-[#1e3a8a]" />
             <span>
