@@ -5,6 +5,7 @@ import { ArrowUpRight, Filter, Loader2, RefreshCw, Search, Scale, SlidersHorizon
 import { consultarEmbargos } from '@/app/actions/embargos'
 import {
   formatMoney,
+  getEstadoConfig,
   periodoLabel,
   resumenEstados,
   TIPOS_CONSULTA,
@@ -21,6 +22,7 @@ const ESTADO_OPTIONS = [
   { value: '', label: 'Todos los estados' },
   { value: 'ESPERA', label: 'E · En espera' },
   { value: 'ACTIVO', label: 'A · Activo' },
+  { value: 'NO_IMPUTACION', label: 'N · No imputación' },
   { value: 'BAJA', label: 'B · Baja' },
   { value: 'CANCELADO', label: 'C · Cancelado' },
 ]
@@ -240,7 +242,7 @@ export default function ConsultasEmbargos({ onOpenAgent }: ConsultasEmbargosProp
                   <tr key={embargo.id} className="transition hover:bg-slate-50">
                     <td className="px-2 py-2 text-center">
                       <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-slate-100 text-[10px] font-black text-slate-600">
-                        {embargo.estado === 'ACTIVO' ? 'A' : embargo.estado === 'ESPERA' ? 'E' : embargo.estado === 'BAJA' ? 'B' : 'C'}
+                        {getEstadoConfig(embargo.estado).letra}
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-600">{embargo.dni || '—'}</td>

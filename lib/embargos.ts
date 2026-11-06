@@ -1,4 +1,4 @@
-export type EstadoEmbargo = 'ESPERA' | 'ACTIVO' | 'BAJA' | 'CANCELADO'
+export type EstadoEmbargo = 'ESPERA' | 'ACTIVO' | 'NO_IMPUTACION' | 'BAJA' | 'CANCELADO'
 
 export interface EstadoEmbargoConfig {
   value: EstadoEmbargo
@@ -25,6 +25,14 @@ export const ESTADOS_EMBARGO: EstadoEmbargoConfig[] = [
     descripcion: 'Embargo con retención vigente.',
     badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     dotClass: 'bg-emerald-500',
+  },
+  {
+    value: 'NO_IMPUTACION',
+    letra: 'N',
+    label: 'No imputación',
+    descripcion: 'Embargo cancelado con una cuota pendiente de revisión.',
+    badgeClass: 'bg-violet-50 text-violet-700 border-violet-200',
+    dotClass: 'bg-violet-500',
   },
   {
     value: 'BAJA',
@@ -365,10 +373,11 @@ export function resumenEstados(embargos: Embargo[]) {
 const PRIORIDAD_ESTADO_EMBARGO: Record<string, number> = {
   ACTIVO: 0,
   ESPERA: 1,
+  NO_IMPUTACION: 2,
   // Baja y cancelado son estados cerrados: se muestran al final, juntos y en
   // orden cronológico.
-  BAJA: 2,
-  CANCELADO: 2,
+  BAJA: 3,
+  CANCELADO: 3,
 }
 
 function fechaOrdenable(value: string): string {

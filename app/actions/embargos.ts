@@ -1237,6 +1237,8 @@ export interface ImportarPlanillaResult {
   creadas: number
   actualizadas: number
   omitidas: number
+  /** Embargos cancelados que quedaron (o se mantuvieron) en No imputación. */
+  marcadosNoImputacion: number
   importe: number
   errores: string[]
 }
@@ -1332,18 +1334,21 @@ function saldoPrevioEmbargo(
 
 
 /**
- * Confirma la importación: crea o actualiza la retención del período para cada
- * DNI con embargo activo.
+ * Confirma la importación: crea o actualiza las retenciones de los embargos
+ * activos y marca como No imputación los embargos cancelados que tienen una
+ * cuota nueva en la planilla.
  */
 export async function importarRetencionesPlanilla(
   periodo: string,
   items: ImportarPlanillaItem[],
+  noImputacionIds: number[] = [],
 ): Promise<ImportarPlanillaResult> {
   const vacio: ImportarPlanillaResult = {
     ok: false,
     creadas: 0,
     actualizadas: 0,
     omitidas: 0,
+    marcadosNoImputacion: 0,
     importe: 0,
     errores: [],
   }
@@ -1357,11 +1362,19 @@ export async function importarRetencionesPlanilla(
     const per = periodo.trim()
     if (!validarPeriodo(per)) return { ...vacio, error: 'Período inválido (usar aaaa-mm).' }
 
-    if (!Array.isArray(items) || items.length === 0) {
+    const idsNoImputacion = [
+      ...new Set(
+        (Array.isArray(noImputacionIds) ? noImputacionIds : []).filter(
+          (id) => Number.isInteger(id) && id > 0,
+        ),
+      ),
+    ]
+
+    if ((!Array.isArray(items) || items.length === 0) && idsNoImputacion.length === 0) {
       return { ...vacio, error: 'No hay retenciones para importar.' }
     }
 
-    const limpios = items
+    const limpios = (Array.isArray(items) ? items : [])
       .map((item) => ({
         dni: String(item.dni ?? '').replace(/\D/g, ''),
         retencionSueldo: Math.max(0, roundMoney(Number(item.retencionSueldo) || 0)),
@@ -1369,7 +1382,7 @@ export async function importarRetencionesPlanilla(
       }))
       .filter((item) => item.dni && (item.retencionSueldo > 0 || item.retencionRefrigerio > 0))
 
-    if (limpios.length === 0) {
+    if (limpios.length === 0 && idsNoImputacion.length === 0) {
       return { ...vacio, error: 'No hay retenciones válidas para importar.' }
     }
 
@@ -1513,7 +1526,42 @@ export async function importarRetencionesPlanilla(
       await recalcularSaldos(idEmbargo)
     }
 
-    return { ok: true, periodo: per, creadas, actualizadas, omitidas, importe, errores }
+    // Embargos cancelados con una cuota nueva: pasan a No imputación para que
+    // el operador los revise.
+    let marcadosNoImputacion = 0
+    if (idsNoImputacion.length > 0) {
+      const embargosNoImputacion = await prisma.eMBARGO.findMany({
+        where: {
+          ID_EMBARGO: { in: idsNoImputacion },
+          BIT_BORRADO: false,
+          ESTADO: { in: ['CANCELADO', 'NO_IMPUTACION'] },
+        },
+        select: { ID_EMBARGO: true, ESTADO: true },
+      })
+      for (const embargo of embargosNoImputacion) {
+        marcadosNoImputacion += 1
+        if (embargo.ESTADO === 'NO_IMPUTACION') continue
+        await prisma.eMBARGO.update({
+          where: { ID_EMBARGO: embargo.ID_EMBARGO },
+          data: {
+            ESTADO: 'NO_IMPUTACION',
+            FECHA_ULTIMA_MODIFICACION: new Date(),
+            USUARIO_ULTIMA_MODIFICACION: session.userId,
+          },
+        })
+      }
+    }
+
+    return {
+      ok: true,
+      periodo: per,
+      creadas,
+      actualizadas,
+      omitidas,
+      marcadosNoImputacion,
+      importe,
+      errores,
+    }
   } catch (error) {
     logServerError('[importarRetencionesPlanilla] Error:', error)
     return { ...vacio, error: 'No se pudieron importar las retenciones.' }

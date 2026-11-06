@@ -33,6 +33,13 @@ function AccionBadge({ item }: { item: RetencionPlanillaItem }) {
       </span>
     )
   }
+  if (item.accion === 'no_imputacion') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-700">
+        <AlertCircle className="h-2.5 w-2.5" /> No imputación
+      </span>
+    )
+  }
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rose-700">
       <AlertCircle className="h-2.5 w-2.5" /> Error
@@ -116,14 +123,17 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
   const confirmar = async () => {
     if (!preview?.periodo) return
     const items = preview.items
-      .filter((item) => item.accion !== 'error')
+      .filter((item) => item.accion === 'crear' || item.accion === 'actualizar')
       .map((item) => ({
         dni: item.dni,
         retencionSueldo: item.retencionSueldo,
         retencionRefrigerio: item.retencionRefrigerio,
       }))
+    const noImputacionIds = preview.items
+      .filter((item) => item.accion === 'no_imputacion' && item.idEmbargo)
+      .map((item) => item.idEmbargo as number)
 
-    if (items.length === 0) {
+    if (items.length === 0 && noImputacionIds.length === 0) {
       setError('No hay filas válidas para importar.')
       return
     }
@@ -131,14 +141,14 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
     setImportando(true)
     setError(null)
     try {
-      const respuesta = await importarRetencionesPlanilla(preview.periodo, items)
+      const respuesta = await importarRetencionesPlanilla(preview.periodo, items, noImputacionIds)
       if (!respuesta.ok) {
         setError(respuesta.error ?? 'No se pudieron importar las retenciones.')
         return
       }
       setResultado(respuesta)
       setNotice(
-        `Importación de ${periodoLabel(respuesta.periodo ?? preview.periodo)}: ${respuesta.creadas} creadas, ${respuesta.actualizadas} actualizadas, ${respuesta.omitidas} omitidas por ${formatMoney(respuesta.importe)}.`,
+        `Importación de ${periodoLabel(respuesta.periodo ?? preview.periodo)}: ${respuesta.creadas} creadas, ${respuesta.actualizadas} actualizadas, ${respuesta.marcadosNoImputacion} marcadas como No imputación, ${respuesta.omitidas} omitidas por ${formatMoney(respuesta.importe)}.`,
       )
       setPreview(null)
       setArchivo(null)
@@ -162,7 +172,8 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
           <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
             Lee la planilla de liquidación, toma las filas de <strong>Sueldo</strong> y <strong>Refrigerio REM</strong> con
             código <strong>8500 (Embargos Varios)</strong> y prepara la retención del período para cada DNI con embargo
-            activo. El período surge de la columna «Período» del archivo.
+            activo. Si el embargo está cancelado y aparece una cuota nueva, queda marcado como{' '}
+            <strong>No imputación</strong> para su revisión.
           </p>
         </div>
       </div>
@@ -222,7 +233,7 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
 
         {preview && (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-3 lg:grid-cols-6">
+            <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-3 lg:grid-cols-7">
               <div className="rounded-lg bg-slate-50 p-2">
                 <p className="text-[9px] uppercase tracking-wide text-slate-400">Período</p>
                 <p className="text-sm font-bold text-slate-800">{periodoLabel(preview.periodo ?? '')}</p>
@@ -238,6 +249,10 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
               <div className="rounded-lg bg-blue-50 p-2">
                 <p className="text-[9px] uppercase tracking-wide text-blue-600">A actualizar</p>
                 <p className="text-sm font-bold text-blue-700">{preview.resumen.actualizar}</p>
+              </div>
+              <div className="rounded-lg bg-violet-50 p-2">
+                <p className="text-[9px] uppercase tracking-wide text-violet-600">No imputación</p>
+                <p className="text-sm font-bold text-violet-700">{preview.resumen.noImputacion}</p>
               </div>
               <div className="rounded-lg bg-rose-50 p-2">
                 <p className="text-[9px] uppercase tracking-wide text-rose-600">Con error</p>
@@ -259,10 +274,24 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
               </div>
             )}
 
+            {preview.resumen.noImputacion > 0 && (
+              <Banner tone="warning">
+                {preview.resumen.noImputacion} DNI(s) tienen un embargo cancelado con una cuota nueva por{' '}
+                {formatMoney(preview.resumen.importeNoImputacion)}. Al confirmar, esos embargos pasan al estado{' '}
+                <strong>No imputación</strong> para que los revises; la retención no se carga.
+              </Banner>
+            )}
+
             {preview.resumen.errores > 0 && (
-              <Banner tone={preview.resumen.errores === preview.resumen.total ? 'warning' : 'info'}>
-                {preview.resumen.errores === preview.resumen.total
-                  ? 'Ninguna de las filas se puede cargar: revisá que los agentes tengan un embargo activo y saldo pendiente.'
+              <Banner
+                tone={
+                  preview.resumen.crear + preview.resumen.actualizar + preview.resumen.noImputacion === 0
+                    ? 'warning'
+                    : 'info'
+                }
+              >
+                {preview.resumen.crear + preview.resumen.actualizar + preview.resumen.noImputacion === 0
+                  ? 'Ninguna de las filas se puede procesar: revisá que los agentes tengan un embargo activo y saldo pendiente.'
                   : `${preview.resumen.errores} fila(s) con error no se van a importar. Podés revisarlas en la columna «Acción».`}
               </Banner>
             )}
@@ -288,7 +317,10 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
                   disabled={
                     importando ||
                     procesando ||
-                    preview.resumen.crear + preview.resumen.actualizar === 0
+                    preview.resumen.crear +
+                      preview.resumen.actualizar +
+                      preview.resumen.noImputacion ===
+                      0
                   }
                   className="flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
                 >
@@ -318,7 +350,13 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
                   {filtrados.map((item) => (
                     <tr
                       key={`${item.dni}-${item.periodo}`}
-                      className={item.accion === 'error' ? 'bg-rose-50/40' : 'hover:bg-slate-50'}
+                      className={
+                        item.accion === 'error'
+                          ? 'bg-rose-50/40'
+                          : item.accion === 'no_imputacion'
+                            ? 'bg-violet-50/40'
+                            : 'hover:bg-slate-50'
+                      }
                     >
                       <td className="whitespace-nowrap px-2 py-1.5 font-mono text-slate-600">{item.dni}</td>
                       <td className="px-2 py-1.5 font-semibold text-slate-700">{item.agente || item.nombre}</td>
@@ -344,6 +382,11 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
                       <td className="px-2 py-1.5">
                         <AccionBadge item={item} />
                         {item.error && <p className="mt-1 text-[10px] leading-tight text-rose-600">{item.error}</p>}
+                        {item.accion === 'no_imputacion' && (
+                          <p className="mt-1 text-[10px] leading-tight text-violet-600">
+                            El embargo cancelado pasará a No imputación para revisión.
+                          </p>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -364,7 +407,8 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
             <p className="font-semibold">
               Importación de {periodoLabel(resultado.periodo ?? '')} finalizada: {resultado.creadas} creadas,{' '}
-              {resultado.actualizadas} actualizadas, {resultado.omitidas} omitidas.
+              {resultado.actualizadas} actualizadas, {resultado.marcadosNoImputacion} marcadas como No imputación,{' '}
+              {resultado.omitidas} omitidas.
             </p>
             {resultado.errores.length > 0 && (
               <ul className="mt-1 max-h-32 overflow-auto text-[10px] text-rose-700">

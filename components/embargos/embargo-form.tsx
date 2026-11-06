@@ -351,7 +351,7 @@ export default function EmbargoForm({
                   },
                   { value: 'CANCELADO', label: 'C · Cancelado' },
                 ]}
-                hint="Solo podés cancelar el embargo. Activo, en espera y baja se asignan automáticamente."
+                hint="Solo podés cancelar el embargo. Activo, en espera y no imputación se asignan automáticamente."
               />
             ) : initial ? (
               <div className="flex flex-col gap-1">

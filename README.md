@@ -13,7 +13,7 @@ Nuevo módulo con cuatro pestañas internas, sin saltos de página:
 - **Ficha del agente**
   - Buscador de agentes por DNI, apellido o nombre.
   - Datos del agente y resumen de embargos (activos, en espera, deuda, retenido y saldo).
-  - Lista de embargos con la marca legacy **E / A / B / C** (espera, activo, baja, cancelado).
+  - Lista de embargos con la marca legacy **E / A / N / B / C** (espera, activo, no imputación, baja, cancelado).
   - Alta y modificación del embargo completo en la misma pantalla: autos, expediente, fecha, cuenta, juez, instancia, nomenclatura, tipo, secretaría judicial, deuda, retención mensual, porcentaje, marca especial, estado y observaciones.
   - Detalle mensual de retenciones con **Retención Sueldo**, **Retención Refrigerio**, retención total y saldo.
   - Alta, modificación y eliminación de retenciones con carga manual de importes y recálculo automático de saldos.

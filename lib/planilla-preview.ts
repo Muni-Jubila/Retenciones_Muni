@@ -24,7 +24,13 @@ export interface RetencionPlanillaItem {
   idEmbargo: number | null
   expediente: string
   saldoDisponible: number
-  accion: 'crear' | 'actualizar' | 'error'
+  /**
+   * crear / actualizar: se carga la retención.
+   * no_imputacion: el embargo está cancelado (o ya marcado como no imputación);
+   *   el importe no se imputa y el embargo queda/se mantiene en NO_IMPUTACION.
+   * error: no se puede procesar (agente inexistente o sin embargo aplicable).
+   */
+  accion: 'crear' | 'actualizar' | 'no_imputacion' | 'error'
   error?: string
 }
 
@@ -37,8 +43,10 @@ export interface AnalizarPlanillaResult {
     total: number
     crear: number
     actualizar: number
+    noImputacion: number
     errores: number
     importe: number
+    importeNoImputacion: number
   }
   advertencias: string[]
 }
@@ -47,7 +55,15 @@ export function resumenPlanillaVacio(): AnalizarPlanillaResult {
   return {
     ok: false,
     items: [],
-    resumen: { total: 0, crear: 0, actualizar: 0, errores: 0, importe: 0 },
+    resumen: {
+      total: 0,
+      crear: 0,
+      actualizar: 0,
+      noImputacion: 0,
+      errores: 0,
+      importe: 0,
+      importeNoImputacion: 0,
+    },
     advertencias: [],
   }
 }
@@ -89,6 +105,19 @@ async function buscarEmbargosActivos(idsAgente: number[]) {
     where: { ID_AGENTE: { in: idsAgente }, BIT_BORRADO: false, ESTADO: 'ACTIVO' },
     select: { ID_EMBARGO: true, ID_AGENTE: true, EXPEDIENTE: true, DEUDA: true },
     orderBy: { ID_EMBARGO: 'asc' },
+  })
+}
+
+async function buscarEmbargosNoImputacion(idsAgente: number[]) {
+  if (idsAgente.length === 0) return []
+  return prisma.eMBARGO.findMany({
+    where: {
+      ID_AGENTE: { in: idsAgente },
+      BIT_BORRADO: false,
+      ESTADO: { in: ['CANCELADO', 'NO_IMPUTACION'] },
+    },
+    select: { ID_EMBARGO: true, ID_AGENTE: true, ESTADO: true, EXPEDIENTE: true },
+    orderBy: [{ FECHA_ALTA: 'desc' }, { ID_EMBARGO: 'desc' }],
   })
 }
 
@@ -166,6 +195,15 @@ export async function analizarPlanillaRetencionesArchivo(
     if (!embargoPorAgente.has(embargo.ID_AGENTE)) embargoPorAgente.set(embargo.ID_AGENTE, embargo)
   }
 
+  const idsSinActivo = agentes
+    .filter((agente) => !embargoPorAgente.has(agente.ID_DATOS_PERSONALES_AGENTE_JUBILA))
+    .map((agente) => agente.ID_DATOS_PERSONALES_AGENTE_JUBILA)
+  const embargosNoImputacion = await buscarEmbargosNoImputacion(idsSinActivo)
+  const noImputacionPorAgente = new Map<number, (typeof embargosNoImputacion)[number]>()
+  for (const embargo of embargosNoImputacion) {
+    if (!noImputacionPorAgente.has(embargo.ID_AGENTE)) noImputacionPorAgente.set(embargo.ID_AGENTE, embargo)
+  }
+
   const idsEmbargo = [...embargoPorAgente.values()].map((embargo) => embargo.ID_EMBARGO)
   const retenciones = idsEmbargo.length
     ? await prisma.rETENCION_EMBARGO.findMany({
@@ -215,6 +253,18 @@ export async function analizarPlanillaRetencionesArchivo(
 
     const embargo = embargoPorAgente.get(agente.ID_DATOS_PERSONALES_AGENTE_JUBILA)
     if (!embargo) {
+      const noImputacion = noImputacionPorAgente.get(agente.ID_DATOS_PERSONALES_AGENTE_JUBILA)
+      if (noImputacion) {
+        // El embargo ya está cancelado (o marcado como no imputación) y la
+        // planilla trae una cuota nueva: queda como No imputación para revisar.
+        items.push({
+          ...base,
+          idEmbargo: noImputacion.ID_EMBARGO,
+          expediente: noImputacion.EXPEDIENTE ?? '',
+          accion: 'no_imputacion',
+        })
+        continue
+      }
       items.push({ ...base, error: 'El agente no tiene un embargo activo.' })
       continue
     }
@@ -244,13 +294,29 @@ export async function analizarPlanillaRetencionesArchivo(
   const resumen = items.reduce(
     (acc, item) => {
       acc.total += 1
-      acc.importe = roundMoney(acc.importe + (item.accion === 'error' ? 0 : item.total))
-      if (item.accion === 'crear') acc.crear += 1
-      else if (item.accion === 'actualizar') acc.actualizar += 1
-      else acc.errores += 1
+      if (item.accion === 'crear') {
+        acc.crear += 1
+        acc.importe = roundMoney(acc.importe + item.total)
+      } else if (item.accion === 'actualizar') {
+        acc.actualizar += 1
+        acc.importe = roundMoney(acc.importe + item.total)
+      } else if (item.accion === 'no_imputacion') {
+        acc.noImputacion += 1
+        acc.importeNoImputacion = roundMoney(acc.importeNoImputacion + item.total)
+      } else {
+        acc.errores += 1
+      }
       return acc
     },
-    { total: 0, crear: 0, actualizar: 0, errores: 0, importe: 0 },
+    {
+      total: 0,
+      crear: 0,
+      actualizar: 0,
+      noImputacion: 0,
+      errores: 0,
+      importe: 0,
+      importeNoImputacion: 0,
+    },
   )
 
   return {

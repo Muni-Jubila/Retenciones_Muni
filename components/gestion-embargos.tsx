@@ -56,6 +56,7 @@ export default function GestionEmbargos() {
             <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
             Estados: <strong className="text-amber-700">E</strong> espera ·
             <strong className="text-emerald-700">A</strong> activo ·
+            <strong className="text-violet-700">N</strong> no imputación ·
             <strong className="text-rose-700">B</strong> baja ·
             <strong className="text-slate-600">C</strong> cancelado
           </div>

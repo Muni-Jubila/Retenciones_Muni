@@ -1022,7 +1022,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 print:hidden">
-                    {(selected.estado === 'ACTIVO' || selected.estado === 'ESPERA') && (
+                    {(selected.estado === 'ACTIVO' || selected.estado === 'ESPERA' || selected.estado === 'NO_IMPUTACION') && (
                       <button
                         type="button"
                         onClick={() => {
