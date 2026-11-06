@@ -78,6 +78,8 @@ function soloDigitos(value: unknown): string {
 
 function clasificarProceso(proceso: string): TipoProcesoPlanilla | null {
   const normalizado = normalizar(proceso)
+  // Se descartan los procesos de TC y CD (tiempo completo / cargos directivos).
+  if (/(?:^|[\s-])(?:tc|cd)(?:$|[\s-])/.test(normalizado)) return null
   if (/^sueldo\b/.test(normalizado)) return 'SUELDO'
   // "Refrigerio REM - Octubre 2026" (se excluye "Refrigerio NOREM").
   if (/^refrigerio rem\b/.test(normalizado)) return 'REFRIGERIO'
@@ -250,7 +252,7 @@ export async function parsearPlanillaRetenciones(stream: Stream): Promise<Planil
   }
   if (ignoradasPorProceso > 0) {
     advertencias.push(
-      `Se ignoraron ${ignoradasPorProceso} fila(s) de código 8500 en procesos que no son Sueldo ni Refrigerio REM.`,
+      `Se ignoraron ${ignoradasPorProceso} fila(s) de código 8500 en procesos no considerados (Refrigerio NOREM, Sueldo/Refrigerio TC o CD, etc.).`,
     )
   }
   if (filasSinDni > 0) {

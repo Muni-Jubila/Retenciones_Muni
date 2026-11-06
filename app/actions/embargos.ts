@@ -191,7 +191,6 @@ function validarEmbargo(input: EmbargoInput): { error?: string; field?: string }
   }
   if (input.sucursal.trim().length > 50) return { error: 'La sucursal supera los 50 caracteres.', field: 'sucursal' }
   if (input.juez.trim().length > 255) return { error: 'El juzgado supera los 255 caracteres.', field: 'juez' }
-  if (/\d/.test(input.juez)) return { error: 'El Juzgado no puede contener números.', field: 'juez' }
   if (input.secretaria.trim().length > 100) return { error: 'El juez supera los 100 caracteres.', field: 'secretaria' }
   if (/\d/.test(input.secretaria)) return { error: 'El Juez no puede contener números.', field: 'secretaria' }
   if (input.observaciones.trim().length > 1000) return { error: 'Las observaciones superan los 1000 caracteres.', field: 'observaciones' }
