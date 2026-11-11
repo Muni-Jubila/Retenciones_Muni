@@ -39,6 +39,7 @@ import {
   ESTADOS_EMBARGO,
   formatMoney,
   moneyToInput,
+  parseExpedienteRetenciones,
   parseMoneyInput,
   periodoActual,
   periodoLabel,
@@ -67,6 +68,7 @@ import type { DatosOficio } from '@/lib/oficio-parser'
 
 interface FichaAgenteProps {
   initialAgenteId?: number | null
+  initialEmbargoId?: number | null
   onInitialConsumed?: () => void
 }
 
@@ -343,7 +345,22 @@ function RetencionForm({
   )
 }
 
-export default function FichaAgente({ initialAgenteId, onInitialConsumed }: FichaAgenteProps) {
+function coincideBusquedaEmbargo(embargo: Embargo, texto: string): boolean {
+  const limpio = texto.trim()
+  if (!limpio) return false
+
+  if (/^\d{3}\.\d{3}\/\d{2}$/.test(limpio)) {
+    const municipal = parseExpedienteRetenciones(limpio)
+    if (municipal == null) return false
+    return Number(embargo.expedienteRetenciones.replace(/\D/g, '')) === municipal
+  }
+
+  const digits = limpio.replace(/\D/g, '')
+  const expJudicial = embargo.expediente.replace(/\D/g, '')
+  return digits.length > 0 && expJudicial.length > 0 && (expJudicial === digits || expJudicial.includes(digits))
+}
+
+export default function FichaAgente({ initialAgenteId, initialEmbargoId, onInitialConsumed }: FichaAgenteProps) {
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [loadingAgent, setLoadingAgent] = useState(false)
@@ -392,11 +409,15 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
   )
   const resumen = useMemo(() => resumenEstados(embargos), [embargos])
 
-  const recargarEmbargos = async (idAgente: number, preferId?: number) => {
+  const recargarEmbargos = async (idAgente: number, preferId?: number, textoBusqueda?: string) => {
     const lista = await listarEmbargosDeAgente(idAgente)
     setEmbargos(lista)
+    const coincidencia = textoBusqueda
+      ? lista.find((embargo) => coincideBusquedaEmbargo(embargo, textoBusqueda))?.id
+      : undefined
     setSelectedId((prev) => {
       if (preferId && lista.some((item) => item.id === preferId)) return preferId
+      if (coincidencia && lista.some((item) => item.id === coincidencia)) return coincidencia
       if (prev && lista.some((item) => item.id === prev)) return prev
       return lista[0]?.id ?? null
     })
@@ -413,7 +434,11 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
     setFormRevision((value) => value + 1)
   }
 
-  const cargarAgente = async (empleado: Empleado, oficio?: OficioImportado | null) => {
+  const cargarAgente = async (
+    empleado: Empleado,
+    oficio?: OficioImportado | null,
+    opciones?: { embargoId?: number; textoBusqueda?: string },
+  ) => {
     setAgente(empleado)
     setResultados([])
     setSinResultados(false)
@@ -426,7 +451,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
     setNotice(null)
     setLoadingAgent(true)
     try {
-      await recargarEmbargos(empleado.id)
+      await recargarEmbargos(empleado.id, opciones?.embargoId, opciones?.textoBusqueda)
     } catch {
       setError('No se pudieron cargar los embargos del agente.')
     } finally {
@@ -442,7 +467,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
     getEmpleadoPorId(initialAgenteId)
       .then((empleado) => {
         if (!active) return
-        if (empleado) void cargarAgente(empleado)
+        if (empleado) void cargarAgente(empleado, null, { embargoId: initialEmbargoId ?? undefined })
         else setError('No se encontró el agente solicitado.')
       })
       .catch(() => {
@@ -459,7 +484,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
     }
     // El id inicial sólo se consume una vez; cargarAgente se recrea con el estado del componente.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialAgenteId])
+  }, [initialAgenteId, initialEmbargoId])
 
   useEffect(() => {
     if (!selectedId) {
@@ -496,7 +521,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
       if (encontrados.length === 0) {
         setSinResultados(true)
       } else if (encontrados.length === 1) {
-        await cargarAgente(encontrados[0], oficio)
+        await cargarAgente(encontrados[0], oficio, { textoBusqueda: texto })
       } else {
         setResultados(encontrados)
       }
@@ -712,7 +737,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.nativeEvent.isComposing) void handleSearch()
                 }}
-                placeholder="Ingrese DNI, apellido o nombre del agente..."
+                placeholder="DNI, apellido, nombre, Exp. Judicial o Exp. Municipal..."
                 className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-400 transition focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
             </div>
@@ -728,7 +753,8 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
           </button>
         </div>
         <p className="mt-2 text-[10px] text-slate-400">
-          Desde la ficha podés cargar el embargo completo, sus retenciones mensuales y consultar el saldo sin cambiar de pantalla.
+          Buscá por DNI, apellido, nombre, N° de expediente judicial o expediente municipal con formato 000.000/00.
+          Desde la ficha podés cargar el embargo y sus retenciones sin cambiar de pantalla.
         </p>
       </div>
 
@@ -749,7 +775,7 @@ export default function FichaAgente({ initialAgenteId, onInitialConsumed }: Fich
               <button
                 key={empleado.id}
                 type="button"
-                onClick={() => void cargarAgente(empleado, oficioPendiente)}
+                onClick={() => void cargarAgente(empleado, oficioPendiente, { textoBusqueda: query })}
                 className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-blue-50"
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-[#1e3a8a]">

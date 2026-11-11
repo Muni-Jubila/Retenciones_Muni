@@ -10,6 +10,7 @@ import {
   periodoActual,
   periodoLabel,
   type ConsultaEmbargosFiltros,
+  type ConsultaRangoFiltros,
   type Embargo,
   type EmbargoInput,
   type EstadoEmbargo,
@@ -750,7 +751,7 @@ export async function consultarEmbargos(filtros: ConsultaEmbargosFiltros): Promi
       lista = lista.filter((e) => mockEmbargos.find((m) => m.id === e.id)!.retenciones.some((r) => r.devolucion > 0))
       break
     case 'NO_IMPUTACIONES':
-      lista = lista.filter((e) => e.estado === 'ESPERA' && e.cantidadRetenciones === 0)
+      lista = lista.filter((e) => e.estado === 'NO_IMPUTACION')
       break
     case 'ALTAS':
       lista = lista.filter((e) => new Date(e.fechaAlta) >= hace30Dias)
@@ -778,6 +779,87 @@ export async function consultarEmbargos(filtros: ConsultaEmbargosFiltros): Promi
     const fb = new Date(b.fechaAlta).getTime() || 0
     return fa - fb || a.id - b.id
   })
+}
+
+function parseFechaMock(value: string): Date | null {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim())
+  if (!match) return null
+  const fecha = new Date(Date.UTC(Number(match[3]), Number(match[2]) - 1, Number(match[1])))
+  return Number.isNaN(fecha.getTime()) ? null : fecha
+}
+
+function ordenarPorFechaAltaMock(lista: Embargo[]): Embargo[] {
+  return [...lista].sort((a, b) => {
+    const fechaA = parseFechaMock(a.fechaAlta)?.getTime() ?? 0
+    const fechaB = parseFechaMock(b.fechaAlta)?.getTime() ?? 0
+    return fechaA - fechaB || a.id - b.id
+  })
+}
+
+function filtrarRangoAltaMock(lista: Embargo[], filtros: ConsultaRangoFiltros): Embargo[] {
+  let resultado = lista
+
+  if (filtros.fechaDesde?.trim()) {
+    const desde = parseFechaMock(filtros.fechaDesde)
+    if (desde) {
+      resultado = resultado.filter((embargo) => {
+        const fecha = parseFechaMock(embargo.fechaAlta)
+        return fecha != null && fecha >= desde
+      })
+    }
+  }
+
+  if (filtros.fechaHasta?.trim()) {
+    const hasta = parseFechaMock(filtros.fechaHasta)
+    if (hasta) {
+      hasta.setUTCHours(23, 59, 59, 999)
+      resultado = resultado.filter((embargo) => {
+        const fecha = parseFechaMock(embargo.fechaAlta)
+        return fecha != null && fecha <= hasta
+      })
+    }
+  }
+
+  if (filtros.periodo) {
+    const [year, month] = filtros.periodo.split('-').map(Number)
+    if (year && month >= 1 && month <= 12) {
+      const inicio = new Date(Date.UTC(year, month - 1, 1))
+      const fin = new Date(Date.UTC(year, month, 1))
+      resultado = resultado.filter((embargo) => {
+        const fecha = parseFechaMock(embargo.fechaAlta)
+        return fecha != null && fecha >= inicio && fecha < fin
+      })
+    }
+  }
+
+  return resultado
+}
+
+export async function listarEmbargosNoImputacion(): Promise<Embargo[]> {
+  return ordenarPorFechaAltaMock(
+    mockEmbargos
+      .filter((embargo) => embargo.estado === 'NO_IMPUTACION')
+      .map(mapEmbargo),
+  )
+}
+
+export async function consultarAltas(filtros: ConsultaRangoFiltros): Promise<Embargo[]> {
+  return ordenarPorFechaAltaMock(
+    filtrarRangoAltaMock(mockEmbargos.map(mapEmbargo), filtros),
+  )
+}
+
+export async function listarActivosSinRetenciones(
+  filtros: ConsultaRangoFiltros = {},
+): Promise<Embargo[]> {
+  return ordenarPorFechaAltaMock(
+    filtrarRangoAltaMock(
+      mockEmbargos
+        .filter((embargo) => embargo.estado === 'ACTIVO' && embargo.retenciones.length === 0)
+        .map(mapEmbargo),
+      filtros,
+    ),
+  )
 }
 
 export async function actualizarEsperas(): Promise<{ ok: boolean; error?: string; procesados: number; activados: number; cancelados: number; ajustados: number }> {

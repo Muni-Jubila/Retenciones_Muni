@@ -19,6 +19,7 @@ const TABS: { id: TabEmbargos; label: string; sublabel: string; icon: React.Elem
 export default function GestionEmbargos() {
   const [activeTab, setActiveTab] = useState<TabEmbargos>('ficha')
   const [agenteParaAbrir, setAgenteParaAbrir] = useState<number | null>(null)
+  const [embargoParaAbrir, setEmbargoParaAbrir] = useState<number | null>(null)
   const [tabsMontadas, setTabsMontadas] = useState<Set<TabEmbargos>>(() => new Set(['ficha']))
 
   const abrirTab = (tab: TabEmbargos) => {
@@ -31,8 +32,9 @@ export default function GestionEmbargos() {
     })
   }
 
-  const abrirFicha = (agenteId: number) => {
+  const abrirFicha = (agenteId: number, embargoId?: number) => {
     setAgenteParaAbrir(agenteId)
+    setEmbargoParaAbrir(embargoId ?? null)
     abrirTab('ficha')
   }
 
@@ -95,12 +97,16 @@ export default function GestionEmbargos() {
         <div className={activeTab === 'ficha' ? 'block' : 'hidden'}>
           <FichaAgente
             initialAgenteId={agenteParaAbrir}
-            onInitialConsumed={() => setAgenteParaAbrir(null)}
+            initialEmbargoId={embargoParaAbrir}
+            onInitialConsumed={() => {
+              setAgenteParaAbrir(null)
+              setEmbargoParaAbrir(null)
+            }}
           />
         </div>
         {tabsMontadas.has('consultas') && (
           <div className={activeTab === 'consultas' ? 'block' : 'hidden'}>
-            <ConsultasEmbargos onOpenAgent={abrirFicha} />
+            <ConsultasEmbargos onOpenEmbargo={abrirFicha} />
           </div>
         )}
         {tabsMontadas.has('actualizar') && (

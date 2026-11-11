@@ -217,6 +217,13 @@ export interface ConsultaEmbargosFiltros {
   periodo?: string
 }
 
+/** Filtros de fecha de alta utilizados por las consultas de Altas y Activos sin retención. */
+export interface ConsultaRangoFiltros {
+  fechaDesde?: string
+  fechaHasta?: string
+  periodo?: string
+}
+
 export interface ResumenRetencion {
   idRetencion: number
   periodo: string
@@ -238,7 +245,7 @@ export const TIPOS_CONSULTA: { value: NonNullable<ConsultaEmbargosFiltros['tipo'
   { value: 'EXPEDIENTE', label: 'Por expediente', ayuda: 'Embargos de los DNI ingresados, filtrados por número de expediente.', inputLabel: 'Número de expediente' },
   { value: 'CANCELACIONES', label: 'Cancelaciones', ayuda: 'Embargos cancelados (deuda saldada o finalizados) de los DNI ingresados.' },
   { value: 'DEVOLUCIONES', label: 'Devoluciones', ayuda: 'Retenciones con importes devueltos al agente, de los DNI ingresados.' },
-  { value: 'NO_IMPUTACIONES', label: 'No imputaciones', ayuda: 'Embargos en espera que todavía no registran retenciones, de los DNI ingresados.' },
+  { value: 'NO_IMPUTACIONES', label: 'No imputaciones', ayuda: 'Embargos cancelados con una cuota nueva pendiente de revisión, de los DNI ingresados.' },
   { value: 'ALTAS', label: 'Consultas de altas', ayuda: 'Embargos dados de alta en los últimos 30 días, de los DNI ingresados.' },
   { value: 'BAJAS_COBRANDO', label: 'Bajas cobrando', ayuda: 'Embargos en baja que todavía conservan saldo pendiente, de los DNI ingresados.' },
   { value: 'BAJAS_REN_DEC', label: 'Bajas x Ren./Dec.', ayuda: 'Embargos dados de baja por renuncia o decreto, de los DNI ingresados.', inputLabel: 'Expediente, autos o motivo (opcional)' },
