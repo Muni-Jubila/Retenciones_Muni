@@ -105,7 +105,7 @@ export default function GestionEmbargos() {
         )}
         {tabsMontadas.has('actualizar') && (
           <div className={activeTab === 'actualizar' ? 'block' : 'hidden'}>
-            <ActualizarEmbargos />
+            <ActualizarEmbargos onOpenAgent={abrirFicha} />
           </div>
         )}
         {tabsMontadas.has('archivos') && (

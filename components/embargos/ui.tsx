@@ -161,6 +161,7 @@ export function TextField({
   error,
   maxLength,
   readOnly,
+  disabled,
   type = 'text',
   hint,
 }: {
@@ -173,6 +174,7 @@ export function TextField({
   error?: string | null
   maxLength?: number
   readOnly?: boolean
+  disabled?: boolean
   type?: string
   hint?: string
 }) {
@@ -189,13 +191,14 @@ export function TextField({
         placeholder={placeholder ?? '—'}
         maxLength={maxLength}
         readOnly={readOnly}
+        disabled={disabled}
         autoComplete="off"
         className={cn(
           'rounded-md border px-2.5 py-1.5 text-sm transition',
           error
             ? 'border-rose-500 bg-rose-50/40 text-rose-900 focus:outline-none focus:ring-2 focus:ring-rose-200'
             : 'border-slate-200 bg-white text-slate-800 placeholder:text-slate-300 focus:border-[#1e3a8a] focus:outline-none focus:ring-2 focus:ring-blue-200',
-          readOnly && 'cursor-default bg-slate-50 text-slate-500',
+          (readOnly || disabled) && 'cursor-default bg-slate-50 text-slate-500',
         )}
       />
       {hint && <span className="text-[10px] text-slate-400">{hint}</span>}

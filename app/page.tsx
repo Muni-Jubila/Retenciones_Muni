@@ -95,7 +95,12 @@ export default function App() {
         />
 
         <main className="flex-1 overflow-y-auto">
-          {activeSection === 'embargos' && <GestionEmbargos />}
+          {/* GestionEmbargos queda montado aunque se cambie de sección para que
+              los procesos largos (Excel de retenciones y oficios PDF) sigan
+              ejecutándose en segundo plano y conserven su progreso. */}
+          <div className={activeSection === 'embargos' ? 'block' : 'hidden'}>
+            <GestionEmbargos />
+          </div>
           {activeSection === 'informes' && <div />}
           {activeSection === 'usuarios' && isAdminRole(role) && <GestionUsuarios />}
         </main>

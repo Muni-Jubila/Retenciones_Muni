@@ -7,6 +7,7 @@ import 'core-js/proposals/iterator-helpers'
 import { extractText } from 'unpdf'
 import { requireAuthenticatedSession } from '@/lib/auth-session'
 import { buscarEmpleados } from '@/app/actions/empleados'
+import { prisma } from '@/lib/prisma'
 import { parseOficio, normalizarDni, type DatosOficio } from '@/lib/oficio-parser'
 import type { Empleado } from '@/lib/empleados'
 import { logServerError } from '@/lib/safe-error'
@@ -18,11 +19,19 @@ export interface AnalizarOficioInput {
   contenidoBase64: string
 }
 
+export interface EmbargoExistenteOficio {
+  id: number
+  expediente: string
+  estado: string
+}
+
 export interface AnalizarOficioResult {
   ok: boolean
   error?: string
   datos?: DatosOficio
   agente?: Empleado | null
+  /** Embargos ya cargados del agente, para avisar si el expediente se repite. */
+  embargosExistentes?: EmbargoExistenteOficio[]
   advertencias: string[]
 }
 
@@ -96,7 +105,25 @@ export async function analizarOficioJudicial(input: AnalizarOficioInput): Promis
       advertencias.push('No se pudo detectar el DNI; buscá el agente manualmente.')
     }
 
-    return { ok: true, datos, agente, advertencias }
+    let embargosExistentes: EmbargoExistenteOficio[] = []
+    if (agente) {
+      try {
+        const embargos = await prisma.eMBARGO.findMany({
+          where: { ID_AGENTE: agente.id, BIT_BORRADO: false },
+          select: { ID_EMBARGO: true, EXPEDIENTE: true, ESTADO: true },
+        })
+        embargosExistentes = embargos.map((embargo) => ({
+          id: embargo.ID_EMBARGO,
+          expediente: embargo.EXPEDIENTE ?? '',
+          estado: embargo.ESTADO,
+        }))
+      } catch (error) {
+        logServerError('[analizarOficioJudicial] Error al consultar embargos:', error)
+        advertencias.push('No se pudieron consultar los embargos ya cargados del agente.')
+      }
+    }
+
+    return { ok: true, datos, agente, embargosExistentes, advertencias }
   } catch (error) {
     logServerError('[analizarOficioJudicial] Error:', error)
     return {

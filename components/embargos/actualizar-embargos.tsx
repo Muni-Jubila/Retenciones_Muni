@@ -38,6 +38,7 @@ import {
 } from '@/lib/embargos'
 import { Banner, ConfirmDialog, Money, TextField } from '@/components/embargos/ui'
 import ImportarRetencionesPlanilla from '@/components/embargos/importar-retenciones-planilla'
+import ImportarOficiosMasivo from '@/components/embargos/importar-oficios-masivo'
 
 function ActionCard({
   icon,
@@ -85,7 +86,12 @@ function PeriodPicker({ value, onChange }: { value: string; onChange: (value: st
   )
 }
 
-export default function ActualizarEmbargos() {
+export default function ActualizarEmbargos({
+  onOpenAgent,
+}: {
+  /** Abre la ficha de un agente desde la carga masiva de oficios. */
+  onOpenAgent?: (agenteId: number) => void
+}) {
   const [periodo, setPeriodo] = useState(periodoActual())
   const [periodoDisquete, setPeriodoDisquete] = useState(periodoActual())
 
@@ -280,6 +286,9 @@ export default function ActualizarEmbargos() {
       {error && <Banner tone="error" onClose={() => setError(null)}>{error}</Banner>}
       {notice && <Banner tone="success" onClose={() => setNotice(null)}>{notice}</Banner>}
 
+      <ImportarRetencionesPlanilla />
+      <ImportarOficiosMasivo onOpenAgent={onOpenAgent} />
+
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {/* Actualizar esperas */}
         <ActionCard
@@ -448,8 +457,6 @@ export default function ActualizarEmbargos() {
           </p>
         </ActionCard>
       </div>
-
-      <ImportarRetencionesPlanilla />
 
       {/* Eliminar registro */}
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">

@@ -48,7 +48,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
   })
 }
 
-function DatoOficio({
+export function DatoOficio({
   label,
   value,
   mono = false,
