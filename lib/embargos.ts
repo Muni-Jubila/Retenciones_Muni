@@ -209,6 +209,13 @@ export interface ConsultaEmbargosFiltros {
   periodo?: string
 }
 
+/** Filtros de fecha de alta utilizados por las consultas de Altas y Activos sin retención. */
+export interface ConsultaRangoFiltros {
+  fechaDesde?: string
+  fechaHasta?: string
+  periodo?: string
+}
+
 export interface ResumenRetencion {
   idRetencion: number
   periodo: string

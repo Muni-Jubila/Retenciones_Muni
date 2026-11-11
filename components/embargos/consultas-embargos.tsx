@@ -1,279 +1,467 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowUpRight, Filter, Loader2, RefreshCw, Search, Scale, SlidersHorizontal } from 'lucide-react'
-import { consultarEmbargos } from '@/app/actions/embargos'
 import {
-  formatMoney,
-  periodoLabel,
-  resumenEstados,
-  TIPOS_CONSULTA,
-  type ConsultaEmbargosFiltros,
-  type Embargo,
-} from '@/lib/embargos'
-import { Banner, EmptyState, EstadoBadge, Money, SelectField, TextField } from '@/components/embargos/ui'
+  Activity,
+  ArrowUpRight,
+  CalendarDays,
+  ChevronDown,
+  ChevronUp,
+  FileSearch,
+  Loader2,
+  Scale,
+  UserX,
+} from 'lucide-react'
+import {
+  consultarAltas,
+  listarActivosSinRetenciones,
+  listarEmbargosNoImputacion,
+} from '@/app/actions/embargos'
+import { formatDate, getDateValidationError } from '@/lib/format-utils'
+import { formatMoney, type ConsultaRangoFiltros, type Embargo } from '@/lib/embargos'
+import { Banner, EmptyState, Money, TextField } from '@/components/embargos/ui'
 
 interface ConsultasEmbargosProps {
-  onOpenAgent: (agenteId: number) => void
+  onOpenEmbargo: (agenteId: number, embargoId: number) => void
 }
 
-const ESTADO_OPTIONS = [
-  { value: '', label: 'Todos los estados' },
-  { value: 'ESPERA', label: 'E · En espera' },
-  { value: 'ACTIVO', label: 'A · Activo' },
-  { value: 'BAJA', label: 'B · Baja' },
-  { value: 'CANCELADO', label: 'C · Cancelado' },
+type OpcionId = 'NO_IMPUTACION' | 'ALTAS' | 'ACTIVOS'
+
+interface OpcionConfig {
+  id: OpcionId
+  title: string
+  description: string
+  icon: React.ElementType
+}
+
+const OPCIONES: OpcionConfig[] = [
+  {
+    id: 'NO_IMPUTACION',
+    title: 'Por No Imputación',
+    description: 'Embargos en espera que todavía no tienen ninguna retención imputada.',
+    icon: UserX,
+  },
+  {
+    id: 'ALTAS',
+    title: 'Consultas Altas',
+    description: 'Embargos dados de alta en un rango de fechas y/o en un período.',
+    icon: CalendarDays,
+  },
+  {
+    id: 'ACTIVOS',
+    title: 'Consultas Activos sin Retenciones',
+    description: 'Embargos activos que todavía no tienen ninguna retención.',
+    icon: Activity,
+  },
 ]
 
-export default function ConsultasEmbargos({ onOpenAgent }: ConsultasEmbargosProps) {
-  const [tipo, setTipo] = useState<NonNullable<ConsultaEmbargosFiltros['tipo']>>('TODAS')
-  const [dnisTexto, setDnisTexto] = useState('')
-  const [texto, setTexto] = useState('')
-  const [estado, setEstado] = useState('')
-  const [periodo, setPeriodo] = useState('')
-  const [resultados, setResultados] = useState<Embargo[]>([])
-  const [loading, setLoading] = useState(false)
-  const [consultado, setConsultado] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [aviso, setAviso] = useState<string | null>(null)
+const FILTROS_VACIOS: ConsultaRangoFiltros = {
+  fechaDesde: '',
+  fechaHasta: '',
+  periodo: '',
+}
 
-  const tipoConfig = TIPOS_CONSULTA.find((item) => item.value === tipo) ?? TIPOS_CONSULTA[0]
-  const resumen = resumenEstados(resultados)
+function fechaComparable(value: string | undefined): number | null {
+  if (!value?.trim()) return null
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim())
+  if (!match) return null
+  const fecha = new Date(Date.UTC(Number(match[3]), Number(match[2]) - 1, Number(match[1])))
+  return Number.isNaN(fecha.getTime()) ? null : fecha.getTime()
+}
 
-  const dnisIngresados = dnisTexto
-    .split(/[\s,;]+/)
-    .map((dni) => dni.replace(/\D/g, ''))
-    .filter((dni) => dni.length > 0)
+function validarFiltros(
+  filtros: ConsultaRangoFiltros,
+  setErrores: React.Dispatch<React.SetStateAction<Record<string, string>>>,
+): boolean {
+  const errores: Record<string, string> = {}
 
-  const ejecutar = async (overrides?: Partial<ConsultaEmbargosFiltros>) => {
-    const dnis = overrides?.dnis ?? dnisIngresados
-    if (dnis.length === 0) {
-      setResultados([])
-      setConsultado(false)
-      setAviso('Ingrese al menos un DNI para consultar. Puede ingresar varios separados por coma, punto y coma o espacio.')
-      return
-    }
-    const filtros: ConsultaEmbargosFiltros = {
-      tipo,
-      dnis,
-      texto,
-      estado,
-      periodo,
-      ...overrides,
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      const filas = await consultarEmbargos(filtros)
-      setResultados(filas)
-      setConsultado(true)
-    } catch {
-      setError('No se pudo ejecutar la consulta. Verifique la conexión con la base de datos.')
-    } finally {
-      setLoading(false)
+  const errorDesde = getDateValidationError(filtros.fechaDesde, true)
+  if (errorDesde) errores.fechaDesde = errorDesde
+
+  const errorHasta = getDateValidationError(filtros.fechaHasta, true)
+  if (errorHasta) errores.fechaHasta = errorHasta
+
+  if (!errorDesde && !errorHasta && filtros.fechaDesde && filtros.fechaHasta) {
+    const desde = fechaComparable(filtros.fechaDesde)
+    const hasta = fechaComparable(filtros.fechaHasta)
+    if (desde != null && hasta != null && desde > hasta) {
+      errores.fechaHasta = 'La fecha hasta no puede ser anterior a la fecha desde.'
     }
   }
 
-  const limpiar = () => {
-    setTipo('TODAS')
-    setDnisTexto('')
-    setTexto('')
-    setEstado('')
-    setPeriodo('')
-    setResultados([])
-    setConsultado(false)
-    setError(null)
-    setAviso(null)
+  setErrores(errores)
+  return Object.keys(errores).length === 0
+}
+
+function GrillaEmbargos({
+  filas,
+  loading,
+  consultado,
+  mostrarEstado,
+  onOpenEmbargo,
+}: {
+  filas: Embargo[]
+  loading: boolean
+  consultado: boolean
+  mostrarEstado: boolean
+  onOpenEmbargo: (agenteId: number, embargoId: number) => void
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-8 text-xs font-semibold text-blue-700">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Cargando embargos...
+      </div>
+    )
+  }
+
+  if (!consultado) {
+    return (
+      <EmptyState
+        icon={<Scale className="h-6 w-6" />}
+        title="Esperando consulta"
+        description="La grilla se carga automáticamente al abrir la opción."
+      />
+    )
+  }
+
+  if (filas.length === 0) {
+    return (
+      <EmptyState
+        icon={<Scale className="h-6 w-6" />}
+        title="Sin resultados"
+        description="No hay embargos que coincidan con los filtros seleccionados."
+      />
+    )
   }
 
   return (
+    <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <table className="w-full min-w-[900px] text-xs">
+        <thead className="bg-slate-100 text-[9px] uppercase tracking-wider text-slate-500">
+          <tr>
+            <th className="px-3 py-2 text-left">DNI</th>
+            <th className="px-3 py-2 text-left">Nombre completo</th>
+            <th className="px-3 py-2 text-left">Exp. Judicial</th>
+            <th className="px-3 py-2 text-left">Exp. Retenciones</th>
+            <th className="px-3 py-2 text-right">Deuda</th>
+            <th className="px-3 py-2 text-right">Saldo</th>
+            {mostrarEstado && <th className="px-3 py-2 text-left">Estado</th>}
+            <th className="px-3 py-2 text-center">Ficha</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {filas.map((embargo) => (
+            <tr
+              key={embargo.id}
+              onClick={() => onOpenEmbargo(embargo.idAgente, embargo.id)}
+              className="cursor-pointer transition hover:bg-blue-50/70"
+            >
+              <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-600">{embargo.dni || '—'}</td>
+              <td className="max-w-[240px] truncate px-3 py-2 font-semibold text-slate-800" title={embargo.agente}>
+                {embargo.agente}
+              </td>
+              <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-600">{embargo.expediente || '—'}</td>
+              <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-500">
+                {embargo.expedienteRetenciones || '—'}
+              </td>
+              <td className="whitespace-nowrap px-3 py-2 text-right">
+                <Money value={embargo.deuda} className="text-slate-700" />
+              </td>
+              <td className="whitespace-nowrap px-3 py-2 text-right font-bold">
+                <Money
+                  value={embargo.saldoActual}
+                  className={embargo.saldoActual > 0 ? 'text-rose-600' : 'text-emerald-600'}
+                />
+              </td>
+              {mostrarEstado && (
+                <td className="whitespace-nowrap px-3 py-2">
+                  <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                    No imputación
+                  </span>
+                </td>
+              )}
+              <td className="px-3 py-2 text-center">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onOpenEmbargo(embargo.idAgente, embargo.id)
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-bold text-[#1e3a8a] transition hover:bg-blue-100"
+                >
+                  Abrir
+                  <ArrowUpRight className="h-3 w-3" />
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function FiltrosRango({
+  filtros,
+  errores,
+  loading,
+  etiquetaBoton,
+  onChange,
+  onAplicar,
+  onLimpiar,
+}: {
+  filtros: ConsultaRangoFiltros
+  errores: Record<string, string>
+  loading: boolean
+  etiquetaBoton: string
+  onChange: (campo: keyof ConsultaRangoFiltros, valor: string) => void
+  onAplicar: () => void
+  onLimpiar: () => void
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+      <TextField
+        label="Fecha desde"
+        value={filtros.fechaDesde ?? ''}
+        onChange={(value) => onChange('fechaDesde', formatDate(value))}
+        placeholder="dd/mm/aaaa"
+        maxLength={10}
+        hint="Fecha de alta del embargo."
+        error={errores.fechaDesde ?? null}
+      />
+      <TextField
+        label="Fecha hasta"
+        value={filtros.fechaHasta ?? ''}
+        onChange={(value) => onChange('fechaHasta', formatDate(value))}
+        placeholder="dd/mm/aaaa"
+        maxLength={10}
+        hint="Fecha de alta del embargo."
+        error={errores.fechaHasta ?? null}
+      />
+      <TextField
+        label="Período"
+        value={filtros.periodo ?? ''}
+        onChange={(value) => onChange('periodo', value)}
+        type="month"
+        hint="Mes y año de alta."
+      />
+      <div className="flex items-end gap-2">
+        <button
+          type="button"
+          onClick={onAplicar}
+          disabled={loading}
+          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#1e3a8a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#172554] disabled:opacity-60"
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSearch className="h-4 w-4" />}
+          {etiquetaBoton}
+        </button>
+        <button
+          type="button"
+          onClick={onLimpiar}
+          disabled={loading}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:opacity-60"
+        >
+          Limpiar
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default function ConsultasEmbargos({ onOpenEmbargo }: ConsultasEmbargosProps) {
+  const [opcionAbierta, setOpcionAbierta] = useState<OpcionId | null>(null)
+  const [resultados, setResultados] = useState<Record<OpcionId, Embargo[]>>({
+    NO_IMPUTACION: [],
+    ALTAS: [],
+    ACTIVOS: [],
+  })
+  const [consultado, setConsultado] = useState<Record<OpcionId, boolean>>({
+    NO_IMPUTACION: false,
+    ALTAS: false,
+    ACTIVOS: false,
+  })
+  const [cargando, setCargando] = useState<OpcionId | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const [filtrosAltas, setFiltrosAltas] = useState<ConsultaRangoFiltros>({ ...FILTROS_VACIOS })
+  const [erroresAltas, setErroresAltas] = useState<Record<string, string>>({})
+  const [filtrosActivos, setFiltrosActivos] = useState<ConsultaRangoFiltros>({ ...FILTROS_VACIOS })
+  const [erroresActivos, setErroresActivos] = useState<Record<string, string>>({})
+
+  const cargar = async (opcion: OpcionId, filtros: ConsultaRangoFiltros) => {
+    setCargando(opcion)
+    setError(null)
+    try {
+      const filas =
+        opcion === 'NO_IMPUTACION'
+          ? await listarEmbargosNoImputacion()
+          : opcion === 'ALTAS'
+            ? await consultarAltas(filtros)
+            : await listarActivosSinRetenciones(filtros)
+
+      setResultados((prev) => ({ ...prev, [opcion]: filas }))
+      setConsultado((prev) => ({ ...prev, [opcion]: true }))
+    } catch {
+      setError('No se pudo cargar la consulta. Verificá la conexión con la base de datos.')
+    } finally {
+      setCargando(null)
+    }
+  }
+
+  const toggleOpcion = (opcion: OpcionId) => {
+    if (opcionAbierta === opcion) {
+      setOpcionAbierta(null)
+      return
+    }
+
+    setOpcionAbierta(opcion)
+    setError(null)
+    if (!consultado[opcion]) {
+      const filtros = opcion === 'ALTAS' ? filtrosAltas : opcion === 'ACTIVOS' ? filtrosActivos : {}
+      void cargar(opcion, filtros)
+    }
+  }
+
+  const actualizarFiltro = (
+    opcion: 'ALTAS' | 'ACTIVOS',
+    campo: keyof ConsultaRangoFiltros,
+    valor: string,
+  ) => {
+    if (opcion === 'ALTAS') {
+      setFiltrosAltas((prev) => ({ ...prev, [campo]: valor }))
+      setErroresAltas((prev) => {
+        if (!prev[campo]) return prev
+        const next = { ...prev }
+        delete next[campo]
+        return next
+      })
+    } else {
+      setFiltrosActivos((prev) => ({ ...prev, [campo]: valor }))
+      setErroresActivos((prev) => {
+        if (!prev[campo]) return prev
+        const next = { ...prev }
+        delete next[campo]
+        return next
+      })
+    }
+  }
+
+  const aplicarFiltros = (opcion: 'ALTAS' | 'ACTIVOS') => {
+    const filtros = opcion === 'ALTAS' ? filtrosAltas : filtrosActivos
+    const setErrores = opcion === 'ALTAS' ? setErroresAltas : setErroresActivos
+    if (!validarFiltros(filtros, setErrores)) return
+    void cargar(opcion, filtros)
+  }
+
+  const limpiarFiltros = (opcion: 'ALTAS' | 'ACTIVOS') => {
+    if (opcion === 'ALTAS') {
+      setFiltrosAltas({ ...FILTROS_VACIOS })
+      setErroresAltas({})
+    } else {
+      setFiltrosActivos({ ...FILTROS_VACIOS })
+      setErroresActivos({})
+    }
+    void cargar(opcion, { ...FILTROS_VACIOS })
+  }
+
+  const opcionActual = OPCIONES.find((opcion) => opcion.id === opcionAbierta) ?? null
+  const filasActuales = opcionAbierta ? resultados[opcionAbierta] : []
+
+  return (
     <div className="space-y-4">
-      {/* Tipos de consulta, espejo del menú legacy */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800">
-              <Filter className="h-4 w-4 text-[#1e3a8a]" />
-              Consultas de embargos
-            </h2>
-            <p className="mt-0.5 text-[11px] text-slate-500">{tipoConfig.ayuda}</p>
-          </div>
-          <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-blue-700">
-            {tipoConfig.label}
-          </span>
+        <div className="mb-3">
+          <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800">
+            <FileSearch className="h-4 w-4 text-[#1e3a8a]" />
+            Consultas de embargos
+          </h2>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Elegí una opción para desplegar los filtros y la grilla correspondiente.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <SelectField
-            label="Filtrar por"
-            value={tipo}
-            onChange={(value) => {
-              setTipo(value as NonNullable<ConsultaEmbargosFiltros['tipo']>)
-              setTexto('')
-            }}
-            options={TIPOS_CONSULTA.map((item) => ({
-              value: item.value,
-              label: item.value === 'AGENTE' ? 'Por agente' : item.value === 'PROGRAMA' ? 'Por programa' : item.value === 'EXPEDIENTE' ? 'Por expediente' : item.label,
-            }))}
-          />
-          <TextField
-            label="DNI(s)"
-            value={dnisTexto}
-            onChange={(value) => {
-              setDnisTexto(value)
-              if (!value.replace(/\D/g, '')) {
-                setResultados([])
-                setConsultado(false)
-              }
-            }}
-            placeholder="Ej: 27887654, 33456123, 24555888"
-            hint="Varios DNI separados por coma, punto y coma o espacio."
-          />
-          <SelectField label="Estado" value={estado} onChange={setEstado} options={ESTADO_OPTIONS} />
-          <TextField label="Período" value={periodo} onChange={setPeriodo} type="month" />
-          {tipoConfig.inputLabel && (
-            <TextField
-              label={tipoConfig.inputLabel}
-              value={texto}
-              onChange={setTexto}
-              placeholder={tipoConfig.inputLabel.includes('opcional')
-                ? 'Filtro opcional...'
-                : `Ingrese ${tipoConfig.inputLabel.toLowerCase()}...`}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          {OPCIONES.map((opcion) => {
+            const Icon = opcion.icon
+            const activa = opcionAbierta === opcion.id
+            return (
+              <button
+                key={opcion.id}
+                type="button"
+                onClick={() => toggleOpcion(opcion.id)}
+                className={`flex min-h-[110px] w-full flex-col items-start gap-3 rounded-xl border p-4 text-left transition ${
+                  activa
+                    ? 'border-[#1e3a8a] bg-blue-50 ring-1 ring-[#1e3a8a]/20'
+                    : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/40'
+                }`}
+              >
+                <div className="flex w-full items-start justify-between gap-3">
+                  <div
+                    className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${
+                      activa ? 'bg-[#1e3a8a] text-white' : 'bg-blue-50 text-[#1e3a8a]'
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  {activa ? (
+                    <ChevronUp className="h-4 w-4 flex-shrink-0 text-[#1e3a8a]" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 flex-shrink-0 text-slate-400" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-slate-800">{opcion.title}</h3>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{opcion.description}</p>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {opcionAbierta && opcionActual && (
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+            <div>
+              <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[#1e3a8a]">
+                <opcionActual.icon className="h-3.5 w-3.5" />
+                {opcionActual.title}
+                <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] text-slate-600">
+                  {resultados[opcionAbierta].length}
+                </span>
+              </h3>
+              <p className="mt-0.5 text-[10px] text-slate-500">{opcionActual.description}</p>
+            </div>
+          </div>
+
+          <div className="space-y-4 p-4">
+            {opcionAbierta !== 'NO_IMPUTACION' && (
+              <FiltrosRango
+                filtros={opcionAbierta === 'ALTAS' ? filtrosAltas : filtrosActivos}
+                errores={opcionAbierta === 'ALTAS' ? erroresAltas : erroresActivos}
+                loading={cargando === opcionAbierta}
+                etiquetaBoton={opcionAbierta === 'ALTAS' ? 'Consultar' : 'Filtrar'}
+                onChange={(campo, valor) =>
+                  actualizarFiltro(opcionAbierta === 'ALTAS' ? 'ALTAS' : 'ACTIVOS', campo, valor)
+                }
+                onAplicar={() => aplicarFiltros(opcionAbierta === 'ALTAS' ? 'ALTAS' : 'ACTIVOS')}
+                onLimpiar={() => limpiarFiltros(opcionAbierta === 'ALTAS' ? 'ALTAS' : 'ACTIVOS')}
+              />
+            )}
+
+            {error && <Banner tone="error" onClose={() => setError(null)}>{error}</Banner>}
+
+            <GrillaEmbargos
+              filas={filasActuales}
+              loading={cargando === opcionAbierta}
+              consultado={consultado[opcionAbierta]}
+              mostrarEstado={opcionAbierta === 'NO_IMPUTACION'}
+              onOpenEmbargo={onOpenEmbargo}
             />
-          )}
-          <div className={`flex items-end gap-2 ${tipoConfig.inputLabel ? '' : 'md:col-span-2 lg:col-span-1'}`}>
-            <button
-              type="button"
-              onClick={() => void ejecutar()}
-              disabled={loading}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#1e3a8a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#172554] disabled:opacity-60"
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              Consultar
-            </button>
-            <button
-              type="button"
-              onClick={limpiar}
-              disabled={loading}
-              className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:opacity-60"
-              title="Limpiar filtros"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Limpiar
-            </button>
           </div>
         </div>
-      </div>
-
-      {error && <Banner tone="error" onClose={() => setError(null)}>{error}</Banner>}
-      {aviso && <Banner tone="warning" onClose={() => setAviso(null)}>{aviso}</Banner>}
-
-      {/* Resumen (solo tras ejecutar una consulta) */}
-      {(consultado || loading) && (
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {[
-          { label: 'Resultados', value: String(resumen.total) },
-          { label: 'Deuda total', value: formatMoney(resumen.deuda) },
-          { label: 'Retenido', value: formatMoney(resumen.retenido) },
-          { label: 'Saldo pendiente', value: formatMoney(resumen.saldo) },
-        ].map((item) => (
-          <div key={item.label} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{item.label}</p>
-            <p className="mt-0.5 truncate font-mono text-sm font-bold text-slate-800" title={item.value}>{item.value}</p>
-          </div>
-        ))}
-      </div>
       )}
-
-      {/* Resultados */}
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
-          <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[#1e3a8a]">
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            Resultados de la consulta
-            <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] text-slate-600">{resultados.length}</span>
-          </h3>
-          <span className="text-[10px] text-slate-400">Ordenados del más viejo al más nuevo · Máximo 300 registros. Abrí la ficha para modificar.</span>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 px-4 py-10 text-xs text-slate-500">
-            <Loader2 className="h-4 w-4 animate-spin text-[#1e3a8a]" />
-            Consultando embargos...
-          </div>
-        ) : resultados.length === 0 ? (
-          <div className="p-5">
-            <EmptyState
-              icon={<Scale className="h-6 w-6" />}
-              title={consultado ? 'Sin resultados para esta consulta' : 'Ingrese uno o más DNI para consultar'}
-              description={
-                consultado
-                  ? 'No hay embargos que coincidan con los DNI y filtros seleccionados. Probá con otro tipo de consulta, estado o período.'
-                  : 'Los resultados se muestran únicamente al ingresar DNI. Podés cargar varios separados por coma, punto y coma o espacio.'
-              }
-            />
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] text-xs">
-              <thead className="bg-slate-100 text-[9px] uppercase tracking-wider text-slate-500">
-                <tr>
-                  <th className="w-9 px-2 py-2 text-center">M</th>
-                  <th className="px-3 py-2 text-left">DNI</th>
-                  <th className="px-3 py-2 text-left">Agente</th>
-                  <th className="px-3 py-2 text-left">Autos</th>
-                  <th className="px-3 py-2 text-left">Exp. Judicial</th>
-                  <th className="px-3 py-2 text-left">Exp. Retenciones</th>
-                  <th className="px-3 py-2 text-left">Fecha</th>
-                  <th className="px-3 py-2 text-left">Estado</th>
-                  <th className="px-3 py-2 text-right">Deuda</th>
-                  <th className="px-3 py-2 text-right">Retenido</th>
-                  <th className="px-3 py-2 text-right">Saldo</th>
-                  <th className="px-3 py-2 text-left">
-                    {tipo === 'PRIMER_MES' ? 'Primer mes' : 'Último mes'}
-                  </th>
-                  <th className="px-3 py-2 text-center print:hidden">Ficha</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {resultados.map((embargo) => (
-                  <tr key={embargo.id} className="transition hover:bg-slate-50">
-                    <td className="px-2 py-2 text-center">
-                      <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-slate-100 text-[10px] font-black text-slate-600">
-                        {embargo.estado === 'ACTIVO' ? 'A' : embargo.estado === 'ESPERA' ? 'E' : embargo.estado === 'BAJA' ? 'B' : 'C'}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-600">{embargo.dni || '—'}</td>
-                    <td className="max-w-[190px] truncate px-3 py-2 font-semibold text-slate-800" title={embargo.agente}>{embargo.agente}</td>
-                    <td className="max-w-[230px] truncate px-3 py-2 text-slate-600" title={embargo.autos}>{embargo.autos || '—'}</td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-600">{embargo.expediente || '—'}</td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-500">{embargo.expedienteRetenciones || '—'}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-slate-500">{embargo.fechaExpediente || '—'}</td>
-                    <td className="whitespace-nowrap px-3 py-2"><EstadoBadge estado={embargo.estado} /></td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right"><Money value={embargo.deuda} /></td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right text-emerald-700"><Money value={embargo.totalRetenido} /></td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right font-bold text-rose-600"><Money value={embargo.saldoActual} /></td>
-                    <td className="whitespace-nowrap px-3 py-2 text-slate-500">
-                      {tipo === 'PRIMER_MES' ? periodoLabel(embargo.primerPeriodo) : periodoLabel(embargo.ultimoPeriodo)}
-                    </td>
-                    <td className="px-3 py-2 text-center print:hidden">
-                      <button
-                        type="button"
-                        onClick={() => onOpenAgent(embargo.idAgente)}
-                        className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-bold text-[#1e3a8a] transition hover:bg-blue-100"
-                        title="Abrir la ficha del agente"
-                      >
-                        Abrir
-                        <ArrowUpRight className="h-3 w-3" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   )
 }

@@ -1,10 +1,12 @@
 'use server'
 
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requireAuthenticatedSession } from '@/lib/auth-session'
 import { logServerError } from '@/lib/safe-error'
 import { calcEdadActual, composeFullName, dbDateToStr, type Empleado } from '@/lib/empleados'
 import { getDateValidationError } from '@/lib/format-utils'
+import { parseExpedienteRetenciones } from '@/lib/embargos'
 
 interface FilaEmpleado {
   ID_DATOS_PERSONALES_AGENTE_JUBILA: number
@@ -82,17 +84,46 @@ export async function buscarEmpleados(query: string): Promise<Empleado[]> {
       return filas.map(mapEmpleado)
     }
 
-    const cleanNumeric = q.replace(/[.\s-]/g, '')
-    const isNumeric = /^\d+$/.test(cleanNumeric) && cleanNumeric.length > 0
+    const digits = q.replace(/\D/g, '')
+    const esBusquedaNumerica = /^[\d./\s-]+$/.test(q) && digits.length > 0
+    const esFormatoMunicipal = /^\d{3}\.\d{3}\/\d{2}$/.test(q)
 
-    if (isNumeric) {
+    if (esFormatoMunicipal) {
+      const municipal = parseExpedienteRetenciones(q)
+      if (municipal == null) return []
       const filas = await prisma.dATOS_PERSONALES_AGENTE_JUBILA.findMany({
         where: {
           BIT_BORRADO: false,
-          DNI_AGENTE: { contains: cleanNumeric },
+          EMBARGO: {
+            some: {
+              BIT_BORRADO: false,
+              NRO_EXPEDIENTE_RETENCIONES: municipal,
+            },
+          },
         },
         include: includeRegimen,
-        orderBy: { DNI_AGENTE: 'asc' },
+        orderBy: ordenApellidoNombre,
+        take: 50,
+      })
+      return filas.map(mapEmpleado)
+    }
+
+    if (esBusquedaNumerica) {
+      const condiciones: Prisma.DATOS_PERSONALES_AGENTE_JUBILAWhereInput[] = [
+        { DNI_AGENTE: { contains: digits } },
+        { EMBARGO: { some: { BIT_BORRADO: false, EXPEDIENTE: { contains: digits } } } },
+      ]
+      if (q !== digits) {
+        condiciones.push({ EMBARGO: { some: { BIT_BORRADO: false, EXPEDIENTE: { contains: q } } } })
+      }
+
+      const filas = await prisma.dATOS_PERSONALES_AGENTE_JUBILA.findMany({
+        where: {
+          BIT_BORRADO: false,
+          OR: condiciones,
+        },
+        include: includeRegimen,
+        orderBy: ordenApellidoNombre,
         take: 50,
       })
       return filas.map(mapEmpleado)

@@ -21,6 +21,7 @@ import {
   SALARIO_MINIMO_DEFAULT,
   toCsv,
   type ConsultaEmbargosFiltros,
+  type ConsultaRangoFiltros,
   type Embargo,
   type EmbargoInput,
   type EstadoEmbargo,
@@ -1012,6 +1013,104 @@ export async function consultarEmbargos(filtros: ConsultaEmbargosFiltros): Promi
   } catch (error) {
     logServerError('[consultarEmbargos] Error:', error)
     throw new Error('No se pudo ejecutar la consulta de embargos.')
+  }
+}
+
+function buildFiltroFechaAlta(filtros: ConsultaRangoFiltros): Prisma.EMBARGOWhereInput {
+  const condiciones: Prisma.EMBARGOWhereInput[] = []
+
+  if (filtros.fechaDesde?.trim()) {
+    const desde = parseDate(filtros.fechaDesde)
+    if (desde) condiciones.push({ FECHA_ALTA: { gte: desde } })
+  }
+
+  if (filtros.fechaHasta?.trim()) {
+    const hasta = parseDate(filtros.fechaHasta)
+    if (hasta) {
+      const fin = new Date(hasta)
+      fin.setUTCHours(23, 59, 59, 999)
+      condiciones.push({ FECHA_ALTA: { lte: fin } })
+    }
+  }
+
+  if (filtros.periodo && validarPeriodo(filtros.periodo)) {
+    const [year, month] = filtros.periodo.split('-').map(Number)
+    condiciones.push({
+      FECHA_ALTA: {
+        gte: new Date(Date.UTC(year, month - 1, 1)),
+        lt: new Date(Date.UTC(year, month, 1)),
+      },
+    })
+  }
+
+  return condiciones.length > 0 ? { AND: condiciones } : {}
+}
+
+/** Embargos en espera que todavía no tienen ninguna retención imputada. */
+export async function listarEmbargosNoImputacion(): Promise<Embargo[]> {
+  if (isEmbargosMock()) return mock.listarEmbargosNoImputacion()
+  try {
+    await requireAuthenticatedSession()
+    const filas = await prisma.eMBARGO.findMany({
+      where: {
+        BIT_BORRADO: false,
+        ESTADO: 'ESPERA',
+        RETENCION_EMBARGO: { none: {} },
+      },
+      include: includeEmbargo,
+      orderBy: [{ FECHA_ALTA: 'asc' }, { ID_EMBARGO: 'asc' }],
+      take: 300,
+    })
+    return filas.map(mapEmbargo)
+  } catch (error) {
+    logServerError('[listarEmbargosNoImputacion] Error:', error)
+    throw new Error('No se pudieron cargar los embargos sin imputación.')
+  }
+}
+
+/** Altas de embargos filtradas por fecha de alta y/o período. */
+export async function consultarAltas(filtros: ConsultaRangoFiltros): Promise<Embargo[]> {
+  if (isEmbargosMock()) return mock.consultarAltas(filtros)
+  try {
+    await requireAuthenticatedSession()
+    const filas = await prisma.eMBARGO.findMany({
+      where: {
+        BIT_BORRADO: false,
+        ...buildFiltroFechaAlta(filtros),
+      },
+      include: includeEmbargo,
+      orderBy: [{ FECHA_ALTA: 'asc' }, { ID_EMBARGO: 'asc' }],
+      take: 300,
+    })
+    return filas.map(mapEmbargo)
+  } catch (error) {
+    logServerError('[consultarAltas] Error:', error)
+    throw new Error('No se pudieron cargar las altas de embargos.')
+  }
+}
+
+/** Embargos activos sin ninguna retención, opcionalmente filtrados por fecha de alta. */
+export async function listarActivosSinRetenciones(
+  filtros: ConsultaRangoFiltros = {},
+): Promise<Embargo[]> {
+  if (isEmbargosMock()) return mock.listarActivosSinRetenciones(filtros)
+  try {
+    await requireAuthenticatedSession()
+    const filas = await prisma.eMBARGO.findMany({
+      where: {
+        BIT_BORRADO: false,
+        ESTADO: 'ACTIVO',
+        RETENCION_EMBARGO: { none: {} },
+        ...buildFiltroFechaAlta(filtros),
+      },
+      include: includeEmbargo,
+      orderBy: [{ FECHA_ALTA: 'asc' }, { ID_EMBARGO: 'asc' }],
+      take: 300,
+    })
+    return filas.map(mapEmbargo)
+  } catch (error) {
+    logServerError('[listarActivosSinRetenciones] Error:', error)
+    throw new Error('No se pudieron cargar los embargos activos sin retenciones.')
   }
 }
 
