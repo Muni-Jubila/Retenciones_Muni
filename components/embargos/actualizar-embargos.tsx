@@ -21,16 +21,20 @@ import {
   eliminarEmbargo,
   exportarActivos,
   exportarDisquete,
+  exportarLiquidacionVisma,
   generarResumen,
   imputarPeriodo,
   type ActualizacionMasivaResult,
   type ImputacionResult,
+  type LiquidacionVismaResult,
 } from '@/app/actions/embargos'
 import {
+  downloadBase64File,
   downloadTextFile,
   formatMoney,
   periodoActual,
   periodoLabel,
+  periodoSiguiente,
   toCsv,
   todayFileSuffix,
   type Embargo,
@@ -74,14 +78,24 @@ function ActionCard({
   )
 }
 
-function PeriodPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function PeriodPicker({
+  value,
+  onChange,
+  label = 'Período',
+  hint = 'Formato aaaa-mm. Por defecto, mes actual.',
+}: {
+  value: string
+  onChange: (value: string) => void
+  label?: string
+  hint?: string
+}) {
   return (
     <TextField
-      label="Período"
+      label={label}
       value={value}
       onChange={onChange}
       type="month"
-      hint="Formato aaaa-mm. Por defecto, mes actual."
+      hint={hint}
     />
   )
 }
@@ -94,6 +108,7 @@ export default function ActualizarEmbargos({
 }) {
   const [periodo, setPeriodo] = useState(periodoActual())
   const [periodoDisquete, setPeriodoDisquete] = useState(periodoActual())
+  const [periodoLiquidacion, setPeriodoLiquidacion] = useState(() => periodoSiguiente(periodoActual()))
 
   const [running, setRunning] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -101,6 +116,8 @@ export default function ActualizarEmbargos({
   const [esperas, setEsperas] = useState<ActualizacionMasivaResult | null>(null)
   const [imputacion, setImputacion] = useState<ImputacionResult | null>(null)
   const [resumen, setResumen] = useState<ResumenRetencion[] | null>(null)
+  const [liquidacionVisma, setLiquidacionVisma] = useState<LiquidacionVismaResult | null>(null)
+  const [vismaError, setVismaError] = useState<string | null>(null)
 
   const [expedienteBusqueda, setExpedienteBusqueda] = useState('')
   const [eliminarResultados, setEliminarResultados] = useState<Embargo[]>([])
@@ -211,6 +228,31 @@ export default function ActualizarEmbargos({
       setNotice(`Archivo de liquidación de ${periodoLabel(periodoDisquete)} descargado.`)
     } catch {
       setError('No se pudo generar el archivo de liquidación.')
+    } finally {
+      setRunning(null)
+    }
+  }
+
+  const runVisma = async () => {
+    setRunning('visma')
+    setLiquidacionVisma(null)
+    setVismaError(null)
+    setError(null)
+    try {
+      const resultado = await exportarLiquidacionVisma(periodoLiquidacion)
+      if (!resultado.ok || !resultado.contenidoBase64) {
+        setVismaError(resultado.error ?? 'No se pudo generar la interfaz de VISMA.')
+        return
+      }
+      downloadBase64File(
+        resultado.nombre ?? `interfaz embargos ${periodoLiquidacion}.xlsx`,
+        resultado.contenidoBase64,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      )
+      setLiquidacionVisma(resultado)
+      setNotice(`Interfaz VISMA de ${periodoLabel(periodoLiquidacion)} generada con ${resultado.filas ?? 0} embargo(s).`)
+    } catch {
+      setVismaError('No se pudo generar la interfaz de VISMA. Verificá la conexión.')
     } finally {
       setRunning(null)
     }
@@ -395,6 +437,50 @@ export default function ActualizarEmbargos({
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </ActionCard>
+
+        {/* Interfaz VISMA */}
+        <ActionCard
+          icon={<FileSpreadsheet className="h-4 w-4" />}
+          title="Interfaz VISMA · Embargos"
+          description="Genera el Excel que se envía a VISMA para liquidar los sueldos: una fila por legajo con el saldo pendiente actual, calculado con todas las retenciones ya registradas. El mes a liquidar solo define la fecha (día 1) y el nombre del archivo."
+          tone="emerald"
+        >
+          <PeriodPicker
+            value={periodoLiquidacion}
+            onChange={setPeriodoLiquidacion}
+            label="Mes a liquidar"
+            hint="Define la fecha del archivo (día 1) y su nombre. El saldo es siempre el actual."
+          />
+          <button
+            type="button"
+            onClick={() => void runVisma()}
+            disabled={running !== null || !periodoLiquidacion}
+            className="flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+          >
+            {running === 'visma' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Descargar Excel VISMA
+          </button>
+          {vismaError && (
+            <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-medium text-rose-700">
+              {vismaError}
+            </p>
+          )}
+          {liquidacionVisma && (
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">
+                {liquidacionVisma.filas} embargos
+              </span>
+              {Boolean(liquidacionVisma.omitidos) && (
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">
+                  {liquidacionVisma.omitidos} omitidos
+                </span>
+              )}
+              <span className="truncate rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600" title={liquidacionVisma.nombre}>
+                {liquidacionVisma.nombre}
+              </span>
             </div>
           )}
         </ActionCard>

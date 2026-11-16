@@ -7,6 +7,7 @@ import { isEmbargosMock } from '@/lib/mock-mode'
 import * as mock from '@/lib/embargos-mock'
 import { logServerError } from '@/lib/safe-error'
 import { composeFullName, dbDateToStr } from '@/lib/empleados'
+import type { FilaLiquidacionVisma } from '@/lib/liquidacion-visma'
 import { getDateValidationError } from '@/lib/format-utils'
 import {
   ESTADOS_EMBARGO,
@@ -15,6 +16,7 @@ import {
   ordenarEmbargos,
   periodoActual,
   periodoLabel,
+  periodoSiguiente,
   parseExpedienteRetenciones,
   parseMoneyInput,
   roundMoney,
@@ -1715,6 +1717,140 @@ export async function exportarDisquete(periodo: string): Promise<{ ok: boolean; 
     ok: true,
     contenido: resultado.contenido,
     nombre: `disquete-retenciones-${periodo}.txt`,
+  }
+}
+
+const MESES_LIQUIDACION = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+]
+
+export interface LiquidacionVismaResult {
+  ok: boolean
+  error?: string
+  contenidoBase64?: string
+  nombre?: string
+  filas?: number
+  omitidos?: number
+}
+
+/**
+ * Genera el Excel de interfaz para VISMA con el saldo pendiente actual de cada
+ * embargo activo: deuda original menos todas las retenciones ya registradas.
+ *
+ * El saldo siempre es el de hoy; el mes recibido solo define la fecha del
+ * archivo (día 1 del mes a liquidar) y su nombre.
+ */
+export async function exportarLiquidacionVisma(periodoLiquidacion?: string): Promise<LiquidacionVismaResult> {
+  try {
+    await requireAuthenticatedSession()
+    const per = (periodoLiquidacion ?? periodoSiguiente(periodoActual())).trim()
+    if (!validarPeriodo(per)) return { ok: false, error: 'Mes a liquidar inválido (usar aaaa-mm).' }
+    const [year, month] = per.split('-')
+    const fecha = `01/${month}/${year}`
+    // Las retenciones de meses posteriores al actual pueden estar precargadas
+    // desde el borrador; no se descuentan porque todavía no se aplicaron.
+    const periodoHoy = periodoActual()
+
+    const filas: FilaLiquidacionVisma[] = []
+    let omitidos = 0
+
+    if (isEmbargosMock()) {
+      const embargos = await mock.consultarEmbargos({ tipo: 'TODAS' })
+      for (const embargo of embargos) {
+        if (embargo.estado !== 'ACTIVO') continue
+        const legajo = (embargo.dni ?? '').replace(/\D/g, '')
+        if (!legajo || embargo.saldoActual <= 0) {
+          omitidos += 1
+          continue
+        }
+        filas.push({
+          legajo,
+          monto: embargo.saldoActual,
+          fecha,
+        })
+      }
+    } else {
+      const embargos = await prisma.eMBARGO.findMany({
+        where: { BIT_BORRADO: false, ESTADO: 'ACTIVO' },
+        include: {
+          DATOS_PERSONALES_AGENTE_JUBILA: {
+            select: { DNI_AGENTE: true },
+          },
+          RETENCION_EMBARGO: {
+            where: { PERIODO: { lte: periodoHoy } },
+            orderBy: { PERIODO: 'asc' },
+          },
+        },
+      })
+
+      for (const embargo of embargos) {
+        const legajo = (embargo.DATOS_PERSONALES_AGENTE_JUBILA.DNI_AGENTE ?? '').replace(/\D/g, '')
+        const saldo = roundMoney(
+          embargo.RETENCION_EMBARGO.reduce(
+            (acc, retencion) => acc - montoRetenido(retencion) + Number(retencion.DEVOLUCION),
+            Number(embargo.DEUDA),
+          ),
+        )
+        if (!legajo || saldo <= 0) {
+          omitidos += 1
+          continue
+        }
+        filas.push({
+          legajo,
+          monto: saldo,
+          fecha,
+        })
+      }
+    }
+
+    // Una fila por legajo: si hubiera más de un embargo activo, se suma el saldo.
+    const porLegajo = new Map<string, FilaLiquidacionVisma>()
+    for (const fila of filas) {
+      const existente = porLegajo.get(fila.legajo)
+      if (!existente) {
+        porLegajo.set(fila.legajo, { ...fila })
+        continue
+      }
+      existente.monto = roundMoney(existente.monto + fila.monto)
+    }
+
+    const filasFinales = [...porLegajo.values()].sort((a, b) =>
+      a.legajo.localeCompare(b.legajo, 'es', { numeric: true }),
+    )
+
+    if (filasFinales.length === 0) {
+      return {
+        ok: false,
+        error: 'No hay embargos activos con saldo pendiente para generar la interfaz de VISMA.',
+      }
+    }
+
+    const { generarExcelLiquidacionVisma } = await import('@/lib/liquidacion-visma')
+    const buffer = await generarExcelLiquidacionVisma(filasFinales)
+    const nombreMes = MESES_LIQUIDACION[Number(month) - 1] ?? month
+    const nombre = `interfaz embargos ${nombreMes} ${year}.xlsx`
+
+    return {
+      ok: true,
+      contenidoBase64: buffer.toString('base64'),
+      nombre,
+      filas: filasFinales.length,
+      omitidos,
+    }
+  } catch (error) {
+    logServerError('[exportarLiquidacionVisma] Error:', error)
+    return { ok: false, error: 'No se pudo generar la interfaz de liquidación para VISMA.' }
   }
 }
 

@@ -31,6 +31,7 @@ Nuevo módulo con cuatro pestañas internas, sin saltos de página:
   - Imputar sueldo / refrigerio por período.
   - Emisión de resumen con previsualización y descarga CSV.
   - Generación de archivo de liquidación (reemplazo del “disquete”).
+  - Interfaz VISMA en Excel: exporta el saldo pendiente actual de los embargos activos (deuda menos todas las retenciones ya registradas) con el formato que se envía a VISMA para liquidar los sueldos. El mes a liquidar define la fecha del archivo (día 1) y su nombre.
   - Archivo de agentes activos con retención.
   - Activación de esperas previas al sueldo.
   - Eliminación de registros por expediente.

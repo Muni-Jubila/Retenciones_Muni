@@ -26,3 +26,5 @@ muni-dev.log
 # Planillas de liquidación de ejemplo (datos personales; no se versionan)
 /*.xlsx
 /*.xlsm
+# Interfaz de ejemplo para VISMA (datos personales; no se versiona)
+/interfaz embargos*.csv

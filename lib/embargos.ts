@@ -273,6 +273,14 @@ export function periodoActual(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
+/** Período siguiente a un `aaaa-mm` (por ejemplo, el mes que se va a liquidar). */
+export function periodoSiguiente(periodo: string): string {
+  const [year, month] = periodo.split('-').map(Number)
+  if (!Number.isInteger(year) || !Number.isInteger(month)) return periodo
+  const date = new Date(Date.UTC(year, month, 1))
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
 export function periodoLabel(periodo: string): string {
   if (!periodo) return '—'
   const [year, month] = periodo.split('-')
@@ -430,6 +438,23 @@ export function downloadTextFile(
   withBom = true,
 ): void {
   const blob = new Blob([withBom ? `\uFEFF${content}` : content], { type: mime })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+export function downloadBase64File(filename: string, base64: string, mime: string): void {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+  const blob = new Blob([bytes], { type: mime })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
