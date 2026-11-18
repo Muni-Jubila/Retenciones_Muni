@@ -5,6 +5,7 @@ import LoginPage from '@/components/login-page'
 import Sidebar, { type NavSection } from '@/components/sidebar'
 import TopBar from '@/components/top-bar'
 import GestionEmbargos from '@/components/gestion-embargos'
+import InformesEmbargos from '@/components/embargos/informes-embargos'
 import GestionUsuarios from '@/components/gestion-usuarios'
 import CambiarContrasena from '@/components/cambiar-contrasena'
 import { getCurrentSession, logoutUsuario } from '@/app/actions/auth'
@@ -101,7 +102,11 @@ export default function App() {
           <div className={activeSection === 'embargos' ? 'block' : 'hidden'}>
             <GestionEmbargos />
           </div>
-          {activeSection === 'informes' && <div />}
+          {activeSection === 'informes' && (
+            <div className="p-6">
+              <InformesEmbargos />
+            </div>
+          )}
           {activeSection === 'usuarios' && isAdminRole(role) && <GestionUsuarios />}
         </main>
       </div>

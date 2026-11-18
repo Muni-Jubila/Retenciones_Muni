@@ -25,16 +25,17 @@ Nuevo módulo con cuatro pestañas internas, sin saltos de página:
   - Acceso directo a la ficha del agente desde cada resultado.
 
 - **Actualizar**
-  - Actualizar esperas y saldos.
   - Importar la planilla de liquidación en Excel: filtra los procesos de Sueldo y Refrigerio REM con código 8500 (Embargos Varios), muestra la vista previa y crea o actualiza las retenciones del período.
   - Carga masiva de oficios judiciales en PDF: procesa varios archivos, muestra una pestaña por oficio con el PDF y los datos detectados, permite editarlos y marca en verde los revisados para crear los embargos en lote.
+  - Interfaz VISMA en Excel: exporta el saldo pendiente actual de los embargos activos (deuda menos todas las retenciones ya registradas) con el formato que se envía a VISMA para liquidar los sueldos. El mes a liquidar define la fecha del archivo (día 1) y su nombre.
+
+- **Informes**
+  - Actualizar esperas y saldos.
   - Imputar sueldo / refrigerio por período.
   - Emisión de resumen con previsualización y descarga CSV.
   - Generación de archivo de liquidación (reemplazo del “disquete”).
-  - Interfaz VISMA en Excel: exporta el saldo pendiente actual de los embargos activos (deuda menos todas las retenciones ya registradas) con el formato que se envía a VISMA para liquidar los sueldos. El mes a liquidar define la fecha del archivo (día 1) y su nombre.
   - Archivo de agentes activos con retención.
   - Activación de esperas previas al sueldo.
-  - Eliminación de registros por expediente.
 
 - **Archivos**
   - Indexar / recalcular saldos.

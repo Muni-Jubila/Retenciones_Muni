@@ -12,7 +12,7 @@ type TabEmbargos = 'ficha' | 'consultas' | 'actualizar' | 'archivos'
 const TABS: { id: TabEmbargos; label: string; sublabel: string; icon: React.ElementType }[] = [
   { id: 'ficha', label: 'Ficha del agente', sublabel: 'Carga integral', icon: UserRoundSearch },
   { id: 'consultas', label: 'Consultas', sublabel: 'Por agente, expediente y más', icon: FileSearch },
-  { id: 'actualizar', label: 'Actualizar', sublabel: 'Esperas, imputación y archivos', icon: FolderCog },
+  { id: 'actualizar', label: 'Actualizar', sublabel: 'Cargas y VISMA', icon: FolderCog },
   { id: 'archivos', label: 'Archivos', sublabel: 'Indexar, restaurar y backup', icon: Archive },
 ]
 
