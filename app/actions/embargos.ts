@@ -3,8 +3,6 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requireAuthenticatedSession } from '@/lib/auth-session'
-import { isEmbargosMock } from '@/lib/mock-mode'
-import * as mock from '@/lib/embargos-mock'
 import { logServerError } from '@/lib/safe-error'
 import { composeFullName, dbDateToStr } from '@/lib/empleados'
 import { getDateValidationError } from '@/lib/format-utils'
@@ -363,11 +361,6 @@ export interface RetencionActionResult {
 }
 
 export async function listarEmbargosDeAgente(idAgente: number): Promise<Embargo[]> {
-  if (isEmbargosMock()) {
-    const { getEmpleadoPorId } = await import('@/app/actions/empleados')
-    const empleado = await getEmpleadoPorId(idAgente)
-    return mock.listarEmbargosDeAgente(idAgente, empleado)
-  }
   try {
     await requireAuthenticatedSession()
     if (!Number.isInteger(idAgente) || idAgente <= 0) return []
@@ -383,7 +376,6 @@ export async function listarEmbargosDeAgente(idAgente: number): Promise<Embargo[
 }
 
 export async function crearEmbargo(input: EmbargoInput): Promise<EmbargoActionResult> {
-  if (isEmbargosMock()) return mock.crearEmbargo(input) as any
   try {
     const session = await requireAuthenticatedSession()
     const validation = validarEmbargo(input)
@@ -459,7 +451,6 @@ export async function crearEmbargo(input: EmbargoInput): Promise<EmbargoActionRe
 }
 
 export async function actualizarEmbargo(id: number, input: EmbargoInput): Promise<EmbargoActionResult> {
-  if (isEmbargosMock()) return mock.actualizarEmbargo(id, input) as any
   try {
     const session = await requireAuthenticatedSession()
     if (!Number.isInteger(id) || id <= 0) return { ok: false, error: 'Embargo inválido.' }
@@ -572,7 +563,6 @@ export async function cambiarEstadoEmbargo(
   estado: string,
   motivo?: string,
 ): Promise<EmbargoActionResult> {
-  if (isEmbargosMock()) return mock.cambiarEstadoEmbargo(id, estado, motivo) as any
   try {
     const session = await requireAuthenticatedSession()
     if (!Number.isInteger(id) || id <= 0) return { ok: false, error: 'Embargo inválido.' }
@@ -615,7 +605,6 @@ export async function cambiarEstadoEmbargo(
 }
 
 export async function eliminarEmbargo(id: number): Promise<{ ok: boolean; error?: string }> {
-  if (isEmbargosMock()) return mock.eliminarEmbargo(id)
   try {
     const session = await requireAuthenticatedSession()
     if (!Number.isInteger(id) || id <= 0) return { ok: false, error: 'Embargo inválido.' }
@@ -648,7 +637,6 @@ export async function eliminarEmbargo(id: number): Promise<{ ok: boolean; error?
 }
 
 export async function listarRetenciones(idEmbargo: number): Promise<RetencionEmbargo[]> {
-  if (isEmbargosMock()) return mock.listarRetenciones(idEmbargo)
   try {
     await requireAuthenticatedSession()
     if (!Number.isInteger(idEmbargo) || idEmbargo <= 0) return []
@@ -668,7 +656,6 @@ function validarPeriodo(periodo: string): boolean {
 }
 
 export async function crearRetencion(input: RetencionInput): Promise<RetencionActionResult> {
-  if (isEmbargosMock()) return mock.crearRetencion(input) as any
   try {
     const session = await requireAuthenticatedSession()
     if (!Number.isInteger(input.idEmbargo) || input.idEmbargo <= 0) {
@@ -763,7 +750,6 @@ export async function actualizarRetencion(
   id: number,
   input: Omit<RetencionInput, 'idEmbargo'>,
 ): Promise<RetencionActionResult> {
-  if (isEmbargosMock()) return mock.actualizarRetencion(id, input) as any
   try {
     await requireAuthenticatedSession()
     if (!Number.isInteger(id) || id <= 0) return { ok: false, error: 'Retención inválida.' }
@@ -858,7 +844,6 @@ export async function actualizarRetencion(
 }
 
 export async function eliminarRetencion(id: number): Promise<{ ok: boolean; error?: string; saldoActual?: number }> {
-  if (isEmbargosMock()) return mock.eliminarRetencion(id)
   try {
     await requireAuthenticatedSession()
     if (!Number.isInteger(id) || id <= 0) return { ok: false, error: 'Retención inválida.' }
@@ -988,7 +973,6 @@ export async function consultarEmbargos(filtros: ConsultaEmbargosFiltros): Promi
     .filter((dni) => dni.length > 0))]
   filtros = { ...filtros, dnis }
   // Las consultas no deben devolver información personal ni embargos sin una búsqueda explícita por DNI.
-  if (isEmbargosMock()) return dnis.length > 0 ? mock.consultarEmbargos(filtros) : []
   try {
     await requireAuthenticatedSession()
     if (dnis.length === 0) return []
@@ -1048,7 +1032,6 @@ function buildFiltroFechaAlta(filtros: ConsultaRangoFiltros): Prisma.EMBARGOWher
 
 /** Embargos cancelados con una cuota nueva pendiente de revisión. */
 export async function listarEmbargosNoImputacion(): Promise<Embargo[]> {
-  if (isEmbargosMock()) return mock.listarEmbargosNoImputacion()
   try {
     await requireAuthenticatedSession()
     const filas = await prisma.eMBARGO.findMany({
@@ -1069,7 +1052,6 @@ export async function listarEmbargosNoImputacion(): Promise<Embargo[]> {
 
 /** Altas de embargos filtradas por fecha de alta y/o período. */
 export async function consultarAltas(filtros: ConsultaRangoFiltros): Promise<Embargo[]> {
-  if (isEmbargosMock()) return mock.consultarAltas(filtros)
   try {
     await requireAuthenticatedSession()
     const filas = await prisma.eMBARGO.findMany({
@@ -1092,7 +1074,6 @@ export async function consultarAltas(filtros: ConsultaRangoFiltros): Promise<Emb
 export async function listarActivosSinRetenciones(
   filtros: ConsultaRangoFiltros = {},
 ): Promise<Embargo[]> {
-  if (isEmbargosMock()) return mock.listarActivosSinRetenciones(filtros)
   try {
     await requireAuthenticatedSession()
     const filas = await prisma.eMBARGO.findMany({
@@ -1123,7 +1104,6 @@ export interface ActualizacionMasivaResult {
 }
 
 export async function actualizarEsperas(): Promise<ActualizacionMasivaResult> {
-  if (isEmbargosMock()) return mock.actualizarEsperas() as any
   try {
     await requireAuthenticatedSession()
     const embargos = await prisma.eMBARGO.findMany({
@@ -1190,7 +1170,6 @@ export interface ImputacionResult {
 }
 
 export async function imputarPeriodo(periodo: string): Promise<ImputacionResult> {
-  if (isEmbargosMock()) return mock.imputarPeriodo(periodo) as any
   try {
     const session = await requireAuthenticatedSession()
     const per = periodo.trim()
@@ -1255,7 +1234,6 @@ export async function imputarPeriodo(periodo: string): Promise<ImputacionResult>
 }
 
 export async function generarResumen(periodo: string): Promise<{ ok: boolean; error?: string; filas: ResumenRetencion[] }> {
-  if (isEmbargosMock()) return mock.generarResumen(periodo)
   try {
     await requireAuthenticatedSession()
     const per = periodo.trim()
@@ -1449,10 +1427,6 @@ export async function importarRetencionesPlanilla(
     marcadosNoImputacion: 0,
     importe: 0,
     errores: [],
-  }
-
-  if (isEmbargosMock()) {
-    return { ...vacio, error: 'La importación desde Excel no está disponible en modo demo.' }
   }
 
   try {
@@ -1696,7 +1670,6 @@ function resumenToCsv(filas: ResumenRetencion[]): string {
 }
 
 export async function exportarResumen(periodo: string): Promise<{ ok: boolean; error?: string; contenido?: string; nombre?: string }> {
-  if (isEmbargosMock()) return mock.exportarResumen(periodo)
   const resultado = await generarResumen(periodo)
   if (!resultado.ok) return { ok: false, error: resultado.error }
   return {
@@ -1707,7 +1680,6 @@ export async function exportarResumen(periodo: string): Promise<{ ok: boolean; e
 }
 
 export async function exportarDisquete(periodo: string): Promise<{ ok: boolean; error?: string; contenido?: string; nombre?: string }> {
-  if (isEmbargosMock()) return mock.exportarDisquete(periodo)
   // El "disquete" legacy se reemplaza por un TXT delimitado listo para liquidación.
   const resultado = await exportarResumen(periodo)
   if (!resultado.ok || !resultado.contenido) return resultado
@@ -1719,7 +1691,6 @@ export async function exportarDisquete(periodo: string): Promise<{ ok: boolean; 
 }
 
 export async function exportarActivos(): Promise<{ ok: boolean; error?: string; contenido?: string; nombre?: string }> {
-  if (isEmbargosMock()) return mock.exportarActivos()
   try {
     await requireAuthenticatedSession()
     const filas = await prisma.eMBARGO.findMany({
@@ -1793,7 +1764,6 @@ interface BackupArchivo {
 }
 
 export async function exportarBackup(): Promise<{ ok: boolean; error?: string; contenido?: string; nombre?: string }> {
-  if (isEmbargosMock()) return mock.exportarBackup()
   try {
     await requireAuthenticatedSession()
     const filas = await prisma.eMBARGO.findMany({
@@ -1878,7 +1848,6 @@ export interface RestauracionResult {
 }
 
 export async function restaurarBackup(payload: string): Promise<RestauracionResult> {
-  if (isEmbargosMock()) return mock.restaurarBackup(payload) as any
   try {
     const session = await requireAuthenticatedSession()
     let parsed: unknown
@@ -2010,7 +1979,6 @@ export async function verificarIntegridad(): Promise<{
   revisados: number
   inconsistencias: Inconsistencia[]
 }> {
-  if (isEmbargosMock()) return mock.verificarIntegridad() as any
   try {
     await requireAuthenticatedSession()
     const filas = await prisma.eMBARGO.findMany({
@@ -2064,7 +2032,6 @@ export async function verificarIntegridad(): Promise<{
 }
 
 export async function reindexarSaldos(): Promise<{ ok: boolean; error?: string; procesados: number }> {
-  if (isEmbargosMock()) return mock.reindexarSaldos()
   try {
     await requireAuthenticatedSession()
     const filas = await prisma.eMBARGO.findMany({

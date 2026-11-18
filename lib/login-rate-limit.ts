@@ -1,23 +1,16 @@
 import 'server-only'
 
 import { createHash } from 'crypto'
+import { prisma } from '@/lib/prisma'
 
-const WINDOW_MS = 15 * 60 * 1000
-const BLOCK_MS = 15 * 60 * 1000
 const MAX_FAILURES = 5
-const MAX_ENTRIES = 5_000
+const MAX_BLOCK_MINUTES = 60
+const CLEANUP_AFTER_HOURS = 24
 
-interface AttemptState {
-  failures: number[]
-  blockedUntil: number
+interface AttemptRow {
+  FALLOS: number
+  BLOQUEADO_HASTA: Date | null
 }
-
-const globalForRateLimit = globalThis as unknown as {
-  loginAttempts?: Map<string, AttemptState>
-}
-
-const attempts = globalForRateLimit.loginAttempts ?? new Map<string, AttemptState>()
-globalForRateLimit.loginAttempts = attempts
 
 function keyFor(username: string, clientAddress: string): string {
   return createHash('sha256')
@@ -25,38 +18,56 @@ function keyFor(username: string, clientAddress: string): string {
     .digest('hex')
 }
 
-function prune(now: number): void {
-  for (const [key, state] of attempts) {
-    state.failures = state.failures.filter((timestamp) => now - timestamp < WINDOW_MS)
-    if (state.failures.length === 0 && state.blockedUntil <= now) attempts.delete(key)
-  }
-
-  while (attempts.size > MAX_ENTRIES) {
-    const oldestKey = attempts.keys().next().value as string | undefined
-    if (!oldestKey) break
-    attempts.delete(oldestKey)
-  }
+/** Backoff progresivo: 5 fallos → 1 min, 6 → 2, 7 → 4, 8 → 8, 9 → 16, 10 → 32, 11+ → 60. */
+function blockMinutes(failures: number): number {
+  if (failures < MAX_FAILURES) return 0
+  return Math.min(MAX_BLOCK_MINUTES, 2 ** (failures - MAX_FAILURES))
 }
 
-export function isLoginBlocked(username: string, clientAddress: string): boolean {
-  const now = Date.now()
-  prune(now)
-  const state = attempts.get(keyFor(username, clientAddress))
-  return Boolean(state && state.blockedUntil > now)
+export async function isLoginBlocked(username: string, clientAddress: string): Promise<boolean> {
+  const row = await prisma.iNTENTO_LOGIN.findUnique({
+    where: { CLAVE: keyFor(username, clientAddress) },
+    select: { BLOQUEADO_HASTA: true },
+  })
+  return Boolean(row?.BLOQUEADO_HASTA && row.BLOQUEADO_HASTA.getTime() > Date.now())
 }
 
-export function recordLoginFailure(username: string, clientAddress: string): void {
-  const now = Date.now()
+export async function recordLoginFailure(username: string, clientAddress: string): Promise<void> {
   const key = keyFor(username, clientAddress)
-  const state = attempts.get(key) ?? { failures: [], blockedUntil: 0 }
-  state.failures = state.failures.filter((timestamp) => now - timestamp < WINDOW_MS)
-  state.failures.push(now)
-  if (state.failures.length >= MAX_FAILURES) state.blockedUntil = now + BLOCK_MS
-  attempts.set(key, state)
-  console.warn(`[login-rate-limit] intento fallido key=${key.slice(0, 12)} failures=${state.failures.length}`)
-  prune(now)
+
+  const rows = await prisma.$queryRaw<AttemptRow[]>`
+    INSERT INTO "Intento_Login" ("CLAVE", "FALLOS", "PRIMER_FALLO", "ULTIMO_FALLO")
+    VALUES (${key}, 1, now(), now())
+    ON CONFLICT ("CLAVE") DO UPDATE SET
+      "FALLOS" = CASE
+        WHEN "Intento_Login"."ULTIMO_FALLO" < now() - interval '15 minutes' THEN 1
+        ELSE "Intento_Login"."FALLOS" + 1
+      END,
+      "PRIMER_FALLO" = CASE
+        WHEN "Intento_Login"."ULTIMO_FALLO" < now() - interval '15 minutes' THEN now()
+        ELSE "Intento_Login"."PRIMER_FALLO"
+      END,
+      "ULTIMO_FALLO" = now()
+    RETURNING "FALLOS", "BLOQUEADO_HASTA"
+  `
+
+  const failures = Number(rows[0]?.FALLOS ?? 0)
+  const minutes = blockMinutes(failures)
+  if (minutes > 0) {
+    await prisma.iNTENTO_LOGIN.update({
+      where: { CLAVE: key },
+      data: { BLOQUEADO_HASTA: new Date(Date.now() + minutes * 60_000) },
+    })
+  }
+
+  console.warn(`[login-rate-limit] intento fallido key=${key.slice(0, 12)} failures=${failures}`)
+
+  // Limpieza oportunista de registros viejos.
+  await prisma.iNTENTO_LOGIN.deleteMany({
+    where: { ULTIMO_FALLO: { lt: new Date(Date.now() - CLEANUP_AFTER_HOURS * 60 * 60_000) } },
+  })
 }
 
-export function clearLoginFailures(username: string, clientAddress: string): void {
-  attempts.delete(keyFor(username, clientAddress))
+export async function clearLoginFailures(username: string, clientAddress: string): Promise<void> {
+  await prisma.iNTENTO_LOGIN.deleteMany({ where: { CLAVE: keyFor(username, clientAddress) } })
 }

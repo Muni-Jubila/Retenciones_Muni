@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma'
 const SESSION_COOKIE = 'retenciones_session'
 const SESSION_DURATION_SECONDS = 8 * 60 * 60
 const SESSION_IDLE_SECONDS = 6 * 60 * 60
+const SESSION_ACTIVITY_UPDATE_MS = 60 * 1000
 
 function getSessionSecret(): string {
   const secret = process.env.SESSION_SECRET
@@ -65,7 +66,6 @@ export async function getAuthenticatedSession(): Promise<AuthenticatedSession | 
   const cookieStore = await cookies()
   const decoded = decodeCookie(cookieStore.get(SESSION_COOKIE)?.value)
   if (!decoded) return null
-  const idleExpired = Date.now() - decoded.lastActivity >= SESSION_IDLE_SECONDS * 1000
 
   const session = await prisma.sESION.findUnique({
     where: { ID_SESION: decoded.sessionId },
@@ -81,13 +81,25 @@ export async function getAuthenticatedSession(): Promise<AuthenticatedSession | 
     return null
   }
 
+  const now = Date.now()
+  const lastActivity = session.ULTIMA_ACTIVIDAD?.getTime() ?? session.FECHA_HORA_INICIO.getTime()
   const expiresAt = session.FECHA_HORA_INICIO.getTime() + SESSION_DURATION_SECONDS * 1000
-  if (idleExpired || Date.now() >= expiresAt) {
+  const idleExpired = now - lastActivity >= SESSION_IDLE_SECONDS * 1000
+  if (idleExpired || now >= expiresAt) {
     await prisma.sESION.update({
       where: { ID_SESION: session.ID_SESION },
       data: { FECHA_HORA_FIN: new Date() },
     })
     return null
+  }
+
+  // La actividad se persiste en la base para que el vencimiento por inactividad
+  // no dependa del timestamp de la cookie. Se escribe como máximo una vez por minuto.
+  if (now - lastActivity >= SESSION_ACTIVITY_UPDATE_MS) {
+    await prisma.sESION.update({
+      where: { ID_SESION: session.ID_SESION },
+      data: { ULTIMA_ACTIVIDAD: new Date() },
+    })
   }
 
   await setSessionCookie(session.ID_SESION)
@@ -106,4 +118,35 @@ export async function requireAuthenticatedSession(): Promise<AuthenticatedSessio
   const session = await getAuthenticatedSession()
   if (!session) throw new Error('Sesión inválida o vencida. Ingrese nuevamente.')
   return session
+}
+
+/**
+ * Cierra las sesiones que ya vencieron por inactividad (6 h) o por duración
+ * absoluta (8 h). Se ejecuta al iniciar sesión para mantener la tabla al día.
+ */
+export async function closeExpiredSessions(): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE "SESION"
+    SET "FECHA_HORA_FIN" = LEAST(
+      "ULTIMA_ACTIVIDAD" + interval '6 hours',
+      "FECHA_HORA_INICIO" + interval '8 hours'
+    )
+    WHERE "FECHA_HORA_FIN" IS NULL
+      AND LEAST(
+        "ULTIMA_ACTIVIDAD" + interval '6 hours',
+        "FECHA_HORA_INICIO" + interval '8 hours'
+      ) < now()
+  `
+}
+
+/** Cierra las sesiones activas de un usuario, opcionalmente conservando la actual. */
+export async function closeSessionsForUser(userId: number, exceptSessionId?: number): Promise<void> {
+  await prisma.sESION.updateMany({
+    where: {
+      ID_USUARIO: userId,
+      FECHA_HORA_FIN: null,
+      ...(exceptSessionId ? { ID_SESION: { not: exceptSessionId } } : {}),
+    },
+    data: { FECHA_HORA_FIN: new Date() },
+  })
 }

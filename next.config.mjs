@@ -1,6 +1,4 @@
 /** @type {import('next').NextConfig} */
-const isDevelopment = process.env.NODE_ENV !== 'production'
-
 const nextConfig = {
   images: {
     unoptimized: true,
@@ -21,10 +19,7 @@ const nextConfig = {
       {
         source: '/:path*',
         headers: [
-          {
-            key: 'Content-Security-Policy',
-            value: `default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDevelopment ? " 'unsafe-eval'" : ''}; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' blob: data:${isDevelopment ? ' ws: wss:' : ''}; worker-src 'self' blob:; child-src blob:; frame-src 'self' blob:`,
-          },
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'Referrer-Policy', value: 'no-referrer' },

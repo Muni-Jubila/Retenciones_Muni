@@ -1,7 +1,7 @@
 'use server'
 
 import { prisma } from '@/lib/prisma'
-import { requireAuthenticatedSession } from '@/lib/auth-session'
+import { closeSessionsForUser, requireAuthenticatedSession } from '@/lib/auth-session'
 import bcrypt from 'bcryptjs'
 import { logServerError } from '@/lib/safe-error'
 import { isAdminRole } from '@/lib/roles'
@@ -176,6 +176,7 @@ export async function resetearContrasenaUsuario(id: number, contrasenaTemporal: 
       where: { ID_USUARIO: id },
       data: { CONTRASENA_USUARIO: hash, DEBE_CAMBIAR_CONTRASENA: true },
     })
+    await closeSessionsForUser(id)
     return { ok: true }
   } catch (error) {
     logServerError('[resetearContrasenaUsuario] Error:', error)
