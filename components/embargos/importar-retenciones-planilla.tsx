@@ -16,6 +16,7 @@ import {
 } from '@/app/actions/embargos'
 import type { AnalizarPlanillaResult, RetencionPlanillaItem } from '@/lib/planilla-preview'
 import { formatMoney, periodoLabel } from '@/lib/embargos'
+import { subirArchivoEnPartes } from '@/lib/subir-archivo-cliente'
 import { Banner, Money } from '@/components/embargos/ui'
 
 function AccionBadge({ item }: { item: RetencionPlanillaItem }) {
@@ -52,6 +53,7 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
   const fileRef = useRef<HTMLInputElement>(null)
   const [archivo, setArchivo] = useState<File | null>(null)
   const [procesando, setProcesando] = useState(false)
+  const [progresoSubida, setProgresoSubida] = useState<number | null>(null)
   const [importando, setImportando] = useState(false)
   const [preview, setPreview] = useState<AnalizarPlanillaResult | null>(null)
   const [resultado, setResultado] = useState<ImportarPlanillaResult | null>(null)
@@ -94,15 +96,18 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
       return
     }
     setProcesando(true)
+    setProgresoSubida(null)
     setPreview(null)
     setResultado(null)
     setError(null)
     setNotice(null)
     try {
+      const id = await subirArchivoEnPartes(file, setProgresoSubida)
+      setProgresoSubida(null)
       const response = await fetch('/api/embargos/planilla/preview', {
         method: 'POST',
-        headers: { 'x-archivo-nombre': encodeURIComponent(file.name) },
-        body: file,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
       })
       const respuesta = (await response.json()) as AnalizarPlanillaResult
       if (!response.ok || !respuesta.ok) {
@@ -113,9 +118,14 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
       setNotice(
         `Planilla procesada: ${respuesta.resumen.total} DNI(s) para ${periodoLabel(respuesta.periodo ?? '')}.`,
       )
-    } catch {
-      setError('No se pudo procesar la planilla. Verificá el archivo e intentá de nuevo.')
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'No se pudo procesar la planilla. Verificá el archivo e intentá de nuevo.',
+      )
     } finally {
+      setProgresoSubida(null)
       setProcesando(false)
     }
   }
@@ -226,8 +236,9 @@ export default function ImportarRetencionesPlanilla({ onImported }: { onImported
 
         {procesando && (
           <p className="text-[10px] text-slate-400">
-            La planilla se procesa en el servidor; puede tardar alrededor de 30 segundos en archivos de más de
-            300.000 filas.
+            {progresoSubida !== null
+              ? `Subiendo planilla... ${Math.round(progresoSubida * 100)}%`
+              : 'La planilla se procesa en el servidor. Los archivos grandes pueden tardar unos minutos.'}
           </p>
         )}
 

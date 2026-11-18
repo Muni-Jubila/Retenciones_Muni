@@ -25,8 +25,8 @@ Nuevo módulo con cuatro pestañas internas, sin saltos de página:
   - Acceso directo a la ficha del agente desde cada resultado.
 
 - **Actualizar**
-  - Importar la planilla de liquidación en Excel: filtra los procesos de Sueldo y Refrigerio REM con código 8500 (Embargos Varios), muestra la vista previa y crea o actualiza las retenciones del período.
-  - Carga masiva de oficios judiciales en PDF: procesa varios archivos, muestra una pestaña por oficio con el PDF y los datos detectados, permite editarlos y marca en verde los revisados para crear los embargos en lote.
+  - Importar la planilla de liquidación en Excel: filtra los procesos de Sueldo y Refrigerio REM con código 8500 (Embargos Varios), muestra la vista previa y crea o actualiza las retenciones del período. La planilla se sube en fragmentos, así que no tiene el límite de 4,5 MB de Vercel.
+  - Carga masiva de oficios judiciales en PDF: procesa varios archivos, muestra una pestaña por oficio con el PDF y los datos detectados, permite editarlos y marca en verde los revisados para crear los embargos en lote. Los PDF también se suben en fragmentos.
   - Interfaz VISMA en Excel: exporta el saldo pendiente actual de los embargos activos (deuda menos todas las retenciones ya registradas) con el formato que se envía a VISMA para liquidar los sueldos. El mes a liquidar define la fecha del archivo (día 1) y su nombre.
 
 - **Informes**

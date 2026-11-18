@@ -4,6 +4,10 @@ import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
 
+// Las importaciones de planillas y oficios grandes se procesan en una sola
+// invocación; en Vercel el límite máximo es de 300 s (Hobby) o más en Pro.
+export const maxDuration = 300
+
 export const metadata: Metadata = {
   title: 'Sistema de Retenciones - Municipalidad de Córdoba',
   description: 'Sistema interno de gestión de retenciones para la Municipalidad de Córdoba',

@@ -21,11 +21,10 @@ import { crearEmbargo, listarEmbargosDeAgente } from '@/app/actions/embargos'
 import { buscarEmpleados } from '@/app/actions/empleados'
 import { formatMoney, getEstadoConfig, moneyToInput, parseMoneyInput } from '@/lib/embargos'
 import { oficioToEmbargoInput } from '@/lib/oficio-embargo'
+import { subirArchivoEnPartes } from '@/lib/subir-archivo-cliente'
 import type { DatosOficio } from '@/lib/oficio-parser'
 import type { Empleado } from '@/lib/empleados'
 import { Banner, ConfirmDialog, MoneyField, TextField } from '@/components/embargos/ui'
-
-const MAX_FILE_BYTES = 6 * 1024 * 1024
 
 type EstadoOficio = 'analizando' | 'listo' | 'creando' | 'creado' | 'error'
 
@@ -52,6 +51,7 @@ interface OficioItem {
   montoInput: string
   advertencias: string[]
   revisado: boolean
+  progresoSubida?: number
   error?: string
   agenteError?: string
   embargoCreado?: {
@@ -64,15 +64,6 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
-    reader.onerror = () => reject(new Error('No se pudo leer el archivo.'))
-    reader.readAsDataURL(file)
-  })
 }
 
 function camposFaltantes(datos?: DatosOficio, agente?: Empleado | null): string[] {
@@ -274,10 +265,13 @@ export default function ImportarOficiosMasivo({ onOpenAgent, onImported }: Impor
 
   const analizar = async (item: OficioItem) => {
     try {
-      const dataUrl = await readFileAsDataUrl(item.file)
+      const id = await subirArchivoEnPartes(item.file, (porcentaje) =>
+        actualizar(item.id, { progresoSubida: Math.round(porcentaje * 100) }),
+      )
+      actualizar(item.id, { progresoSubida: undefined })
       const respuesta = await analizarOficioJudicial({
         nombreArchivo: item.nombre,
-        contenidoBase64: dataUrl,
+        id,
       })
       if (!respuesta.ok || !respuesta.datos) {
         actualizar(item.id, { estado: 'error', error: respuesta.error ?? 'No se pudo analizar el oficio.' })
@@ -294,8 +288,12 @@ export default function ImportarOficiosMasivo({ onOpenAgent, onImported }: Impor
         agenteError: undefined,
         error: undefined,
       })
-    } catch {
-      actualizar(item.id, { estado: 'error', error: 'No se pudo leer o analizar el PDF.' })
+    } catch (error) {
+      actualizar(item.id, {
+        estado: 'error',
+        error:
+          error instanceof Error ? error.message : 'No se pudo leer o analizar el PDF.',
+      })
     }
   }
 
@@ -331,7 +329,7 @@ export default function ImportarOficiosMasivo({ onOpenAgent, onImported }: Impor
         })
         continue
       }
-      if (file.size > MAX_FILE_BYTES) {
+      if (file.size > 200 * 1024 * 1024) {
         nuevos.push({
           id,
           file,
@@ -343,7 +341,7 @@ export default function ImportarOficiosMasivo({ onOpenAgent, onImported }: Impor
           embargosExistentes: [],
           montoInput: '',
           revisado: false,
-          error: `El PDF supera el tamaño máximo de ${formatBytes(MAX_FILE_BYTES)}.`,
+          error: 'El PDF supera el tamaño máximo permitido (200 MB).',
         })
         continue
       }
@@ -593,7 +591,7 @@ export default function ImportarOficiosMasivo({ onOpenAgent, onImported }: Impor
               </button>
             </p>
             <p className="text-[10px] text-slate-400">
-              PDF con texto seleccionable · máximo {formatBytes(MAX_FILE_BYTES)} por archivo
+              PDF con texto seleccionable · los archivos grandes se suben por partes
             </p>
           </div>
         ) : (
@@ -809,7 +807,9 @@ export default function ImportarOficiosMasivo({ onOpenAgent, onImported }: Impor
                     {activo.estado === 'analizando' && (
                       <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 text-xs font-semibold text-blue-700">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Leyendo el oficio y buscando el agente...
+                        {activo.progresoSubida !== undefined
+                          ? `Subiendo oficio... ${activo.progresoSubida}%`
+                          : 'Leyendo el oficio y buscando el agente...'}
                       </div>
                     )}
 
