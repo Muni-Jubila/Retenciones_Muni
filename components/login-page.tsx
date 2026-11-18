@@ -18,14 +18,14 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    if (!username.trim() || !password.trim()) {
+    if (!username.trim() || !password) {
       setError('Por favor complete todos los campos.')
       return
     }
     setLoading(true)
     try {
       const result = await Promise.race([
-        loginUsuario(username.trim(), password.trim()),
+        loginUsuario(username.trim(), password),
         new Promise<never>((_, reject) => {
           window.setTimeout(() => reject(new Error('LOGIN_TIMEOUT')), 15_000)
         }),
@@ -98,6 +98,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   placeholder="••••••••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  maxLength={255}
                   className="w-full pl-10 pr-10 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#93c5fd] focus:border-[#1e3a8a] transition"
                   autoComplete="current-password"
                 />

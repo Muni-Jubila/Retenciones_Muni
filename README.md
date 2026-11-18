@@ -82,18 +82,3 @@ npm run dev
 ```
 
 Variables de entorno necesarias: `DATABASE_URL` y `SESSION_SECRET` (ver `.env.example`).
-
-### Vista previa del frontend sin base de datos
-
-Para recorrer las pantallas del módulo de Embargos sin tener aplicada la migración
-ni conexión a la base, creá un archivo `.env.local` (ignorado por git) con:
-
-```bash
-EMBARGOS_MOCK=1
-```
-
-En ese modo el sistema usa datos de ejemplo en memoria (2 agentes, 4 embargos con los
-4 estados y retenciones mensuales) y todas las acciones (alta, modificación, cambio de
-estado, imputación, consultas, backup/restauración, verificación de integridad) se
-ejecutan sobre esos datos. Para volver al modo real, eliminá `.env.local` o poné
-`EMBARGOS_MOCK=0`. Por defecto el modo mock está desactivado.

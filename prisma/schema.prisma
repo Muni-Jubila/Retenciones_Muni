@@ -151,9 +151,23 @@ model SESION {
   ID_USUARIO        Int
   FECHA_HORA_INICIO DateTime
   FECHA_HORA_FIN    DateTime?
+  ULTIMA_ACTIVIDAD  DateTime  @default(now())
   USUARIO           USUARIO   @relation(fields: [ID_USUARIO], references: [ID_USUARIO], onUpdate: NoAction, map: "fk_SESION_USUARIO")
 
   @@index([ID_USUARIO], map: "idx_sesion_id_usuario")
+  @@index([FECHA_HORA_FIN, ULTIMA_ACTIVIDAD], map: "idx_sesion_fin_actividad")
+}
+
+model INTENTO_LOGIN {
+  ID_INTENTO_LOGIN Int       @id @default(autoincrement())
+  CLAVE            String    @unique @db.VarChar(64)
+  FALLOS           Int       @default(0)
+  BLOQUEADO_HASTA  DateTime?
+  PRIMER_FALLO     DateTime  @default(now())
+  ULTIMO_FALLO     DateTime  @default(now())
+
+  @@index([ULTIMO_FALLO], map: "idx_intento_login_ultimo")
+  @@map("Intento_Login")
 }
 
 model USUARIO {

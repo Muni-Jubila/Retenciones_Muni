@@ -420,7 +420,10 @@ export function ordenarEmbargos<T extends Pick<Embargo, 'id' | 'estado' | 'fecha
 }
 
 export function csvEscape(value: string | number | null | undefined): string {
-  const text = String(value ?? '')
+  let text = String(value ?? '')
+  // Evita que Excel interprete como fórmula un texto que empieza con =, +, -, @,
+  // tabulación o retorno de carro. Los números no se tocan para no romper importes.
+  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`
   if (/[";\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`
   return text
 }

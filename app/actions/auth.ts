@@ -3,8 +3,11 @@
 import { prisma } from '@/lib/prisma'
 import { randomUUID } from 'crypto'
 import bcrypt from 'bcryptjs'
+import { headers } from 'next/headers'
 import {
   clearSessionCookie,
+  closeExpiredSessions,
+  closeSessionsForUser,
   getAuthenticatedSession,
   setSessionCookie,
 } from '@/lib/auth-session'
@@ -14,6 +17,12 @@ import {
   recordLoginFailure,
 } from '@/lib/login-rate-limit'
 import { logServerError } from '@/lib/safe-error'
+
+/**
+ * Hash de descarte para que un usuario inexistente tarde lo mismo que uno
+ * existente al validar la contraseña y no se pueda enumerar por timing.
+ */
+const DUMMY_PASSWORD_HASH = '$2b$12$2NcrKu/z4uYKpnopg.NAiu/zxUJSmvQS9RNHQRL70n4rEAV4mMSWu'
 
 export interface LoginResult {
   ok: boolean
@@ -29,24 +38,28 @@ export async function loginUsuario(
   contrasena: string,
 ): Promise<LoginResult> {
   const username = nombreUsuario.trim()
-  // Server Actions no exponen una IP de forma portable entre runtimes.
-  // El limiter puede sustituirse por Redis/SQL cuando se despliegue en varias instancias.
-  const clientAddress = 'server-action'
 
   try {
+    // La IP se toma de los headers que agrega Vercel. En desarrollo no existe y
+    // se usa un valor local; la clave del limiter se guarda hasheada en la base.
+    const headerStore = await headers()
+    const forwardedFor = headerStore.get('x-forwarded-for')
+    const clientAddress =
+      forwardedFor?.split(',')[0]?.trim() || headerStore.get('x-real-ip') || 'local'
+
     if (!process.env.DATABASE_URL) {
       console.error('[loginUsuario] DATABASE_URL no está configurada en las variables de entorno.')
       return { ok: false, error: 'El servicio no está disponible temporalmente.' }
     }
 
-    if (!username || !contrasena.trim()) {
+    if (!username || !contrasena) {
       return { ok: false, error: 'Usuario y contraseña son obligatorios.' }
     }
     if (username.length > 100 || contrasena.length > 255) {
       return { ok: false, error: 'Usuario o contraseña incorrectos.' }
     }
-    if (isLoginBlocked(username, clientAddress)) {
-      return { ok: false, error: 'Se alcanzó el límite de 5 intentos.' }
+    if (await isLoginBlocked(username, clientAddress)) {
+      return { ok: false, error: 'Demasiados intentos fallidos. Esperá unos minutos e intentá nuevamente.' }
     }
 
     const usuario = await prisma.uSUARIO.findUnique({
@@ -55,17 +68,27 @@ export async function loginUsuario(
     })
 
     if (!usuario) {
-      recordLoginFailure(username, clientAddress)
+      await bcrypt.compare(contrasena, DUMMY_PASSWORD_HASH)
+      await recordLoginFailure(username, clientAddress)
       return { ok: false, error: 'Usuario o contraseña incorrectos.' }
     }
 
     const tieneHashBcrypt = /^\$2[aby]\$\d{2}\$/.test(usuario.CONTRASENA_USUARIO)
-    const passwordOk = tieneHashBcrypt
-      ? await bcrypt.compare(contrasena, usuario.CONTRASENA_USUARIO)
-      : contrasena === usuario.CONTRASENA_USUARIO
+    if (!tieneHashBcrypt) {
+      // Las contraseñas sin hash no se aceptan. El administrador debe resetearla
+      // desde Gestión de Usuarios para que se guarde con bcrypt.
+      await bcrypt.compare(contrasena, DUMMY_PASSWORD_HASH)
+      logServerError(
+        '[loginUsuario] Usuario con contraseña sin hash:',
+        new Error(`ID_USUARIO=${usuario.ID_USUARIO}`),
+      )
+      await recordLoginFailure(username, clientAddress)
+      return { ok: false, error: 'Usuario o contraseña incorrectos.' }
+    }
+    const passwordOk = await bcrypt.compare(contrasena, usuario.CONTRASENA_USUARIO)
 
     if (!passwordOk) {
-      recordLoginFailure(username, clientAddress)
+      await recordLoginFailure(username, clientAddress)
       return { ok: false, error: 'Usuario o contraseña incorrectos.' }
     }
 
@@ -76,17 +99,12 @@ export async function loginUsuario(
       return { ok: false, error: 'Tu usuario no tiene un rol asignado en Retenciones. Contactá al administrador.' }
     }
 
-    // Compatibilidad de una sola vez para usuarios creados manualmente en SQL.
-    // La contraseña se reemplaza por un hash antes de finalizar el login.
-    if (!tieneHashBcrypt) {
-      const hash = await bcrypt.hash(contrasena, 12)
-      await prisma.uSUARIO.update({
-        where: { ID_USUARIO: usuario.ID_USUARIO },
-        data: { CONTRASENA_USUARIO: hash, DEBE_CAMBIAR_CONTRASENA: true },
-      })
+    await clearLoginFailures(username, clientAddress)
+    try {
+      await closeExpiredSessions()
+    } catch (error) {
+      logServerError('[loginUsuario] No se pudieron cerrar sesiones vencidas:', error)
     }
-
-    clearLoginFailures(username, clientAddress)
 
     // Registrar inicio de sesión
     const sesion = await prisma.sESION.create({
@@ -102,7 +120,7 @@ export async function loginUsuario(
       username: usuario.NOMBRE_USUARIO,
       userId: usuario.ID_USUARIO,
       role: usuario.ROL_RETENCIONES?.NOMBRE_ROL ?? '',
-      mustChangePassword: usuario.DEBE_CAMBIAR_CONTRASENA || !tieneHashBcrypt,
+      mustChangePassword: usuario.DEBE_CAMBIAR_CONTRASENA,
     }
   } catch (error) {
     const errorId = randomUUID()
@@ -133,6 +151,7 @@ export async function changePassword(
       where: { ID_USUARIO: session.userId },
       data: { CONTRASENA_USUARIO: hash, DEBE_CAMBIAR_CONTRASENA: false },
     })
+    await closeSessionsForUser(session.userId, session.sessionId)
     return { ok: true }
   } catch (error) {
     const errorId = randomUUID()

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { requireAuthenticatedSession } from '@/lib/auth-session'
-import { isEmbargosMock } from '@/lib/mock-mode'
 import { logServerError } from '@/lib/safe-error'
 import {
   analizarPlanillaRetencionesArchivo,
@@ -16,13 +15,6 @@ export const dynamic = 'force-dynamic'
  * porque ExcelJS necesita un stream de Node para leer archivos grandes.
  */
 export async function POST(request: Request) {
-  if (isEmbargosMock()) {
-    return NextResponse.json(
-      { ...resumenPlanillaVacio(), error: 'La importación desde Excel no está disponible en modo demo.' },
-      { status: 400 },
-    )
-  }
-
   try {
     await requireAuthenticatedSession()
   } catch {
