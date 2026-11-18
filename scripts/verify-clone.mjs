@@ -1,0 +1,30 @@
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+const out = {};
+out.usuarios = await prisma.uSUARIO.count();
+out.agentes = await prisma.dATOS_PERSONALES_AGENTE_JUBILA.count();
+out.carrera = await prisma.cARRERA_ADMINISTRATIVA.count();
+out.embargos = await prisma.eMBARGO.count();
+out.retenciones = await prisma.rETENCION_EMBARGO.count();
+out.sesiones = await prisma.sESION.count();
+
+const like = await prisma.$queryRaw`
+  SELECT "ID_DATOS_PERSONALES_AGENTE_JUBILA" id
+  FROM "DATOS_PERSONALES_AGENTE_JUBILA"
+  WHERE (unaccent("APELLIDO_AGENTE") ILIKE unaccent('%' || ${'perez'} || '%')
+     OR unaccent("NOMBRE_AGENTE") ILIKE unaccent('%' || ${'perez'} || '%'))
+  LIMIT 5`;
+out.busquedaUnaccent = like.length;
+
+const emb = await prisma.eMBARGO.findFirst({
+  include: { DATOS_PERSONALES_AGENTE_JUBILA: true, RETENCION_EMBARGO: true },
+});
+out.embargoConRelaciones = emb ? { id: emb.ID_EMBARGO, agente: emb.DATOS_PERSONALES_AGENTE_JUBILA.APELLIDO_AGENTE, retenciones: emb.RETENCION_EMBARGO.length } : null;
+
+const u = await prisma.uSUARIO.findFirst({ select: { NOMBRE_USUARIO: true, ES_RETENCIONES: true, ES_JUBILA: true } });
+out.usuarioMuestra = u;
+
+console.log(JSON.stringify(out, null, 2));
+await prisma.$disconnect();
