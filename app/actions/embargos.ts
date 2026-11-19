@@ -4,9 +4,10 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requireAuthenticatedSession } from '@/lib/auth-session'
 import { logServerError } from '@/lib/safe-error'
-import { composeFullName, dbDateToStr } from '@/lib/empleados'
+import { composeFullName, dbDateToStr, mapEmpleado, type Empleado } from '@/lib/empleados'
 import type { FilaLiquidacionVisma } from '@/lib/liquidacion-visma'
 import { getDateValidationError } from '@/lib/format-utils'
+import { fechaBuenosAires, rangoDiaBuenosAires, rangoPeriodoBuenosAires } from '@/lib/timezone'
 import {
   ESTADOS_EMBARGO,
   formatExpedienteRetenciones,
@@ -108,7 +109,7 @@ function mapRetencion(fila: RetencionDb): RetencionEmbargo {
     saldo: Number(fila.SALDO),
     devolucion: Number(fila.DEVOLUCION),
     observaciones: fila.OBSERVACIONES ?? '',
-    fechaRegistro: dbDateToStr(fila.FECHA_REGISTRO),
+    fechaRegistro: fechaBuenosAires(fila.FECHA_REGISTRO),
   }
 }
 
@@ -122,9 +123,7 @@ function mapEmbargo(fila: EmbargoDb): Embargo {
     retenciones.reduce((acc, item) => acc + Number(item.DEVOLUCION), 0),
   )
   const ultima = retenciones[retenciones.length - 1]
-  const saldoActual = ultima
-    ? Number(ultima.SALDO)
-    : roundMoney(deuda - totalRetenido + totalDevuelto)
+  const saldoActual = Number(fila.SALDO_ACTUAL)
 
   return {
     id: fila.ID_EMBARGO,
@@ -153,8 +152,8 @@ function mapEmbargo(fila: EmbargoDb): Embargo {
     porcentaje: Number(fila.PORCENTAJE ?? 0),
     marcaEspecial: fila.MARCA_ESPECIAL ?? '',
     observaciones: fila.OBSERVACIONES ?? '',
-    fechaAlta: dbDateToStr(fila.FECHA_ALTA),
-    fechaBaja: dbDateToStr(fila.FECHA_BAJA),
+    fechaAlta: fechaBuenosAires(fila.FECHA_ALTA),
+    fechaBaja: fechaBuenosAires(fila.FECHA_BAJA),
     motivoBaja: fila.MOTIVO_BAJA ?? '',
     saldoActual,
     totalRetenido,
@@ -279,10 +278,19 @@ async function activarSiguienteEmbargoEnEspera(idAgente: number, excluirId?: num
   })
   if (!siguiente) return false
 
-  await prisma.eMBARGO.update({
-    where: { ID_EMBARGO: siguiente.ID_EMBARGO },
-    data: { ESTADO: 'ACTIVO', FECHA_BAJA: null, MOTIVO_BAJA: null },
-  })
+  try {
+    await prisma.eMBARGO.update({
+      where: { ID_EMBARGO: siguiente.ID_EMBARGO },
+      data: { ESTADO: 'ACTIVO', FECHA_BAJA: null, MOTIVO_BAJA: null },
+    })
+  } catch (error) {
+    // Otro proceso pudo activar un embargo del mismo agente entre la lectura y
+    // la escritura. El índice único parcial impide el doble activo.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return false
+    }
+    throw error
+  }
   return true
 }
 
@@ -315,6 +323,7 @@ async function recalcularSaldos(idEmbargo: number): Promise<number | null> {
         ESTADO: 'BAJA',
         FECHA_BAJA: new Date(),
         MOTIVO_BAJA: 'Deuda cancelada',
+        SALDO_ACTUAL: decimal(saldo),
       },
     })
     await activarSiguienteEmbargoEnEspera(embargo.ID_AGENTE, idEmbargo)
@@ -340,7 +349,13 @@ async function recalcularSaldos(idEmbargo: number): Promise<number | null> {
         ESTADO: otroActivo ? 'ESPERA' : 'ACTIVO',
         FECHA_BAJA: null,
         MOTIVO_BAJA: null,
+        SALDO_ACTUAL: decimal(saldo),
       },
+    })
+  } else {
+    await prisma.eMBARGO.update({
+      where: { ID_EMBARGO: idEmbargo },
+      data: { SALDO_ACTUAL: decimal(saldo) },
     })
   }
 
@@ -374,6 +389,53 @@ export async function listarEmbargosDeAgente(idAgente: number): Promise<Embargo[
   } catch (error) {
     logServerError('[listarEmbargosDeAgente] Error:', error)
     throw new Error('No se pudieron cargar los embargos del agente.')
+  }
+}
+
+export interface FichaAgenteData {
+  agente: Empleado
+  embargos: Embargo[]
+  retencionesPorEmbargo: Record<number, RetencionEmbargo[]>
+}
+
+/**
+ * Carga en una sola acción el agente, sus embargos y las retenciones de cada
+ * embargo. Evita tres Server Actions separadas y tres validaciones de sesión.
+ */
+export async function obtenerFichaAgente(idAgente: number): Promise<FichaAgenteData | null> {
+  try {
+    await requireAuthenticatedSession()
+    if (!Number.isInteger(idAgente) || idAgente <= 0) return null
+
+    const [filaAgente, filas] = await Promise.all([
+      prisma.dATOS_PERSONALES_AGENTE_JUBILA.findFirst({
+        where: { ID_DATOS_PERSONALES_AGENTE_JUBILA: idAgente, BIT_BORRADO: false },
+        include: { REGIMEN_JUBILATORIO: true },
+      }),
+      prisma.eMBARGO.findMany({
+        where: { ID_AGENTE: idAgente, BIT_BORRADO: false },
+        include: includeEmbargo,
+        orderBy: [{ FECHA_ALTA: 'asc' }, { ID_EMBARGO: 'asc' }],
+      }),
+    ])
+
+    if (!filaAgente) return null
+
+    const retencionesPorEmbargo: Record<number, RetencionEmbargo[]> = {}
+    for (const fila of filas) {
+      retencionesPorEmbargo[fila.ID_EMBARGO] = [...fila.RETENCION_EMBARGO]
+        .sort((a, b) => a.PERIODO.localeCompare(b.PERIODO))
+        .map(mapRetencion)
+    }
+
+    return {
+      agente: mapEmpleado(filaAgente),
+      embargos: ordenarEmbargos(filas.map(mapEmbargo)),
+      retencionesPorEmbargo,
+    }
+  } catch (error) {
+    logServerError('[obtenerFichaAgente] Error:', error)
+    throw new Error('No se pudo cargar la ficha del agente.')
   }
 }
 
@@ -435,6 +497,7 @@ export async function crearEmbargo(input: EmbargoInput): Promise<EmbargoActionRe
       data: {
         ID_AGENTE: input.idAgente,
         ...buildEmbargoData(input),
+        SALDO_ACTUAL: decimal(parseMoneyInput(input.deuda)),
         ESTADO: estadoNuevo,
         ...(nroRetenciones ? { NRO_EXPEDIENTE_RETENCIONES: nroRetenciones } : {}),
         FECHA_ALTA: new Date(),
@@ -448,6 +511,12 @@ export async function crearEmbargo(input: EmbargoInput): Promise<EmbargoActionRe
     return { ok: true, embargo: mapEmbargo(creado) }
   } catch (error) {
     logServerError('[crearEmbargo] Error:', error)
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return {
+        ok: false,
+        error: 'El agente ya tiene un embargo activo. Recargá la ficha e intentá nuevamente.',
+      }
+    }
     return { ok: false, error: 'No se pudo guardar el embargo.' }
   }
 }
@@ -1006,27 +1075,18 @@ function buildFiltroFechaAlta(filtros: ConsultaRangoFiltros): Prisma.EMBARGOWher
   const condiciones: Prisma.EMBARGOWhereInput[] = []
 
   if (filtros.fechaDesde?.trim()) {
-    const desde = parseDate(filtros.fechaDesde)
-    if (desde) condiciones.push({ FECHA_ALTA: { gte: desde } })
+    const rango = rangoDiaBuenosAires(filtros.fechaDesde)
+    if (rango) condiciones.push({ FECHA_ALTA: { gte: rango.desde } })
   }
 
   if (filtros.fechaHasta?.trim()) {
-    const hasta = parseDate(filtros.fechaHasta)
-    if (hasta) {
-      const fin = new Date(hasta)
-      fin.setUTCHours(23, 59, 59, 999)
-      condiciones.push({ FECHA_ALTA: { lte: fin } })
-    }
+    const rango = rangoDiaBuenosAires(filtros.fechaHasta)
+    if (rango) condiciones.push({ FECHA_ALTA: { lt: rango.hastaExclusivo } })
   }
 
   if (filtros.periodo && validarPeriodo(filtros.periodo)) {
-    const [year, month] = filtros.periodo.split('-').map(Number)
-    condiciones.push({
-      FECHA_ALTA: {
-        gte: new Date(Date.UTC(year, month - 1, 1)),
-        lt: new Date(Date.UTC(year, month, 1)),
-      },
-    })
+    const rango = rangoPeriodoBuenosAires(filtros.periodo)
+    if (rango) condiciones.push({ FECHA_ALTA: { gte: rango.desde, lt: rango.hastaExclusivo } })
   }
 
   return condiciones.length > 0 ? { AND: condiciones } : {}
@@ -1093,6 +1153,43 @@ export async function listarActivosSinRetenciones(
   } catch (error) {
     logServerError('[listarActivosSinRetenciones] Error:', error)
     throw new Error('No se pudieron cargar los embargos activos sin retenciones.')
+  }
+}
+
+/**
+ * Cuenta embargos activos y en espera por agente. Se usa en el informe de Altas
+ * para indicar cuántos embargos tiene registrados cada persona.
+ */
+export async function contarEmbargosParaInforme(
+  idsAgente: number[],
+): Promise<Record<number, { activos: number; espera: number }>> {
+  try {
+    await requireAuthenticatedSession()
+    const ids = [...new Set(idsAgente.filter((id) => Number.isInteger(id) && id > 0))]
+    if (ids.length === 0) return {}
+
+    const filas = await prisma.eMBARGO.groupBy({
+      by: ['ID_AGENTE', 'ESTADO'],
+      where: {
+        ID_AGENTE: { in: ids },
+        BIT_BORRADO: false,
+        ESTADO: { in: ['ACTIVO', 'ESPERA'] },
+      },
+      _count: { _all: true },
+    })
+
+    const resultado: Record<number, { activos: number; espera: number }> = {}
+    for (const fila of filas) {
+      const actual = resultado[fila.ID_AGENTE] ?? { activos: 0, espera: 0 }
+      if (fila.ESTADO === 'ACTIVO') actual.activos = fila._count._all
+      if (fila.ESTADO === 'ESPERA') actual.espera = fila._count._all
+      resultado[fila.ID_AGENTE] = actual
+    }
+
+    return resultado
+  } catch (error) {
+    logServerError('[contarEmbargosParaInforme] Error:', error)
+    throw new Error('No se pudieron contar los embargos para el informe.')
   }
 }
 

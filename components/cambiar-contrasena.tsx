@@ -36,7 +36,7 @@ export default function CambiarContrasena({ obligatorio = false, onDone, onBack 
       <label className="block text-sm font-semibold text-slate-700">Confirmar nueva contraseña
         <input className="mt-1 w-full rounded-lg border p-3 font-normal" type="password" placeholder="Repita la nueva contraseña" value={confirmacion} onChange={(e) => setConfirmacion(e.target.value)} minLength={5} maxLength={25} required />
       </label>
-      {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+      {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       <button className="w-full rounded-lg bg-[#1e3a8a] p-3 font-semibold text-white disabled:opacity-60" disabled={loading}>{loading ? 'Guardando...' : 'Guardar contraseña'}</button>
       {!obligatorio && <button type="button" onClick={onBack} className="w-full rounded-lg border border-slate-200 p-3 font-semibold text-slate-600 hover:bg-slate-50">Volver al inicio</button>}
     </form>

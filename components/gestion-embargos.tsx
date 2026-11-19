@@ -11,7 +11,7 @@ type TabEmbargos = 'ficha' | 'consultas' | 'actualizar' | 'archivos'
 
 const TABS: { id: TabEmbargos; label: string; sublabel: string; icon: React.ElementType }[] = [
   { id: 'ficha', label: 'Ficha del agente', sublabel: 'Carga integral', icon: UserRoundSearch },
-  { id: 'consultas', label: 'Consultas', sublabel: 'Por agente, expediente y más', icon: FileSearch },
+  { id: 'consultas', label: 'Consultas', sublabel: 'No imputación, altas y sin retención', icon: FileSearch },
   { id: 'actualizar', label: 'Actualizar', sublabel: 'Cargas y VISMA', icon: FolderCog },
   { id: 'archivos', label: 'Archivos', sublabel: 'Indexar, restaurar y backup', icon: Archive },
 ]
@@ -65,7 +65,7 @@ export default function GestionEmbargos() {
         </div>
 
         {/* Pestañas internas del módulo */}
-        <nav className="mt-4 flex gap-1 overflow-x-auto print:hidden" aria-label="Secciones de embargos">
+        <nav className="mt-4 flex gap-1 overflow-x-auto print:hidden" aria-label="Secciones de embargos" role="tablist">
           {TABS.map((tab) => {
             const Icon = tab.icon
             const active = activeTab === tab.id
@@ -73,6 +73,8 @@ export default function GestionEmbargos() {
               <button
                 key={tab.id}
                 type="button"
+                id={`tab-${tab.id}`}
+                aria-controls={`panel-${tab.id}`}
                 onClick={() => abrirTab(tab.id)}
                 className={`group relative flex min-w-[150px] items-center gap-2 rounded-t-lg border-b-2 px-3 py-2.5 text-left transition ${
                   active
@@ -94,7 +96,12 @@ export default function GestionEmbargos() {
       </div>
 
       <div className="p-6 print:p-0">
-        <div className={activeTab === 'ficha' ? 'block' : 'hidden'}>
+        <div
+          id="panel-ficha"
+          role="tabpanel"
+          aria-labelledby="tab-ficha"
+          className={activeTab === 'ficha' ? 'block' : 'hidden'}
+        >
           <FichaAgente
             initialAgenteId={agenteParaAbrir}
             initialEmbargoId={embargoParaAbrir}
@@ -105,17 +112,32 @@ export default function GestionEmbargos() {
           />
         </div>
         {tabsMontadas.has('consultas') && (
-          <div className={activeTab === 'consultas' ? 'block' : 'hidden'}>
+          <div
+            id="panel-consultas"
+            role="tabpanel"
+            aria-labelledby="tab-consultas"
+            className={activeTab === 'consultas' ? 'block' : 'hidden'}
+          >
             <ConsultasEmbargos onOpenEmbargo={abrirFicha} />
           </div>
         )}
         {tabsMontadas.has('actualizar') && (
-          <div className={activeTab === 'actualizar' ? 'block' : 'hidden'}>
+          <div
+            id="panel-actualizar"
+            role="tabpanel"
+            aria-labelledby="tab-actualizar"
+            className={activeTab === 'actualizar' ? 'block' : 'hidden'}
+          >
             <ActualizarEmbargos onOpenAgent={abrirFicha} />
           </div>
         )}
         {tabsMontadas.has('archivos') && (
-          <div className={activeTab === 'archivos' ? 'block' : 'hidden'}>
+          <div
+            id="panel-archivos"
+            role="tabpanel"
+            aria-labelledby="tab-archivos"
+            className={activeTab === 'archivos' ? 'block' : 'hidden'}
+          >
             <ArchivosEmbargos />
           </div>
         )}

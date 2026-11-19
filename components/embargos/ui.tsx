@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { AlertCircle, CheckCircle2, Info, Loader2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatMoney, formatMoneyTyping, getEstadoConfig } from '@/lib/embargos'
@@ -41,13 +41,18 @@ export function Banner({
     warning: 'bg-amber-50 border-amber-200 text-amber-800',
   }[tone]
   const Icon = tone === 'success' ? CheckCircle2 : tone === 'info' ? Info : AlertCircle
+  const role = tone === 'error' || tone === 'warning' ? 'alert' : 'status'
 
   return (
-    <div className={cn('flex items-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-xs', styles)}>
+    <div
+      role={role}
+      aria-live={role === 'alert' ? 'assertive' : 'polite'}
+      className={cn('flex items-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-xs', styles)}
+    >
       <Icon className="mt-0.5 h-4 w-4 flex-shrink-0" />
       <div className="flex-1 leading-relaxed">{children}</div>
       {onClose && (
-        <button type="button" onClick={onClose} className="opacity-60 transition hover:opacity-100" aria-label="Cerrar">
+        <button type="button" onClick={onClose} className="opacity-60 transition hover:opacity-100" aria-label="Cerrar aviso">
           <X className="h-3.5 w-3.5" />
         </button>
       )}
@@ -103,10 +108,67 @@ export function ConfirmDialog({
   onCancel: () => void
   onConfirm: () => void
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const titleId = useId()
+  const descriptionId = useId()
+  const cancelRef = useRef(onCancel)
+  cancelRef.current = onCancel
+
+  useEffect(() => {
+    if (!open) return
+    const previous = document.activeElement as HTMLElement | null
+    const dialog = dialogRef.current
+
+    const focusables = () =>
+      dialog
+        ? [...dialog.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(
+            (element) => !element.hasAttribute('disabled'),
+          )
+        : []
+
+    focusables()[0]?.focus()
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (!loading) {
+          event.preventDefault()
+          cancelRef.current()
+        }
+        return
+      }
+      if (event.key !== 'Tab') return
+      const list = focusables()
+      if (list.length === 0) return
+      const first = list[0]
+      const last = list[list.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      previous?.focus()
+    }
+  }, [open, loading])
+
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        tabIndex={-1}
+        className="w-full max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+      >
         <div className="flex items-start gap-3 p-5">
           <div
             className={cn(
@@ -117,8 +179,8 @@ export function ConfirmDialog({
             <AlertCircle className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-bold text-slate-800">{title}</h3>
-            <div className="mt-1 text-xs leading-relaxed text-slate-500">{description}</div>
+            <h3 id={titleId} className="text-sm font-bold text-slate-800">{title}</h3>
+            <div id={descriptionId} className="mt-1 text-xs leading-relaxed text-slate-500">{description}</div>
             {children}
           </div>
         </div>
@@ -180,7 +242,7 @@ export function TextField({
 }) {
   return (
     <label className={cn('flex flex-col gap-1', className)}>
-      <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+      <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
         {label}
         {required && <span className="text-rose-500">*</span>}
       </span>
@@ -201,8 +263,8 @@ export function TextField({
           (readOnly || disabled) && 'cursor-default bg-slate-50 text-slate-500',
         )}
       />
-      {hint && <span className="text-[10px] text-slate-400">{hint}</span>}
-      {error && <span className="text-[10px] font-semibold text-rose-600">{error}</span>}
+      {hint && <span className="text-[11px] text-slate-500">{hint}</span>}
+      {error && <span className="text-[11px] font-semibold text-rose-600">{error}</span>}
     </label>
   )
 }
@@ -226,7 +288,7 @@ export function SelectField({
 }) {
   return (
     <label className={cn('flex flex-col gap-1', className)}>
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</span>
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -239,7 +301,7 @@ export function SelectField({
           </option>
         ))}
       </select>
-      {hint && <span className="text-[10px] text-slate-400">{hint}</span>}
+      {hint && <span className="text-[11px] text-slate-500">{hint}</span>}
     </label>
   )
 }
@@ -265,7 +327,7 @@ export function MoneyField({
 }) {
   return (
     <label className={cn('flex flex-col gap-1', className)}>
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</span>
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">{label}</span>
       <div className="relative">
         <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">
           $
@@ -287,8 +349,8 @@ export function MoneyField({
           )}
         />
       </div>
-      {hint && <span className="text-[10px] text-slate-400">{hint}</span>}
-      {error && <span className="text-[10px] font-semibold text-rose-600">{error}</span>}
+      {hint && <span className="text-[11px] text-slate-500">{hint}</span>}
+      {error && <span className="text-[11px] font-semibold text-rose-600">{error}</span>}
     </label>
   )
 }

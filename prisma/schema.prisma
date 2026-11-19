@@ -243,6 +243,7 @@ model EMBARGO {
   TIPO_PROCESO                   String?                        @db.VarChar(20)
   SECRETARIA                     String?                        @db.VarChar(100)
   DEUDA                          Decimal                        @default(0) @db.Decimal(14, 2)
+  SALDO_ACTUAL                   Decimal                        @default(0) @db.Decimal(14, 2)
   IMPORTE_MENSUAL                Decimal                        @default(0) @db.Decimal(14, 2)
   PORCENTAJE                     Decimal?                       @db.Decimal(5, 2)
   MARCA_ESPECIAL                 String?                        @db.VarChar(10)

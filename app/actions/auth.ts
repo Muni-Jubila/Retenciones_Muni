@@ -179,9 +179,9 @@ export async function logoutUsuario(): Promise<void> {
   }
 }
 
-export async function getCurrentSession(): Promise<LoginResult> {
+export async function getCurrentSession(touchActivity = true): Promise<LoginResult> {
   try {
-    const session = await getAuthenticatedSession()
+    const session = await getAuthenticatedSession(touchActivity)
     if (!session) {
       await clearSessionCookie()
       return { ok: false }

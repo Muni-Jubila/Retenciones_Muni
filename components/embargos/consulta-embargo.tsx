@@ -31,6 +31,7 @@ interface DatosEmbargo {
 
 function fechaHora(): string {
   return new Date().toLocaleString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',

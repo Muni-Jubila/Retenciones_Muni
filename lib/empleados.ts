@@ -21,6 +21,59 @@ export interface Empleado {
   antiguedadLicencias: string
 }
 
+export interface FilaEmpleado {
+  ID_DATOS_PERSONALES_AGENTE_JUBILA: number
+  DNI_AGENTE: string | null
+  CUIL: string | null
+  NOMBRE_AGENTE: string
+  APELLIDO_AGENTE: string
+  SEGUNDO_NOMBRE_AGENTE: string | null
+  SEGUNDO_APELLIDO_AGENTE: string | null
+  SEXO: string | null
+  FECHA_NACIMIENTO: Date
+  ESTADO_ACTIVO: boolean
+  SECRETARIA: string | null
+  PROGRAMA: string | null
+  CARGO: string | null
+  NUMERO_TELEFONO: string | null
+  CORREO_ELECTRONICO: string | null
+  ANTIGUEDAD_RECIBO_CALC: string | null
+  ANTIGUEDAD_LICENCIAS_CALC: string | null
+  REGIMEN_JUBILATORIO: { NOMBRE_REGIMEN: string } | null
+}
+
+export function mapEmpleado(fila: FilaEmpleado): Empleado {
+  const nombreCompleto = composeFullName({
+    apellido: fila.APELLIDO_AGENTE,
+    segundoApellido: fila.SEGUNDO_APELLIDO_AGENTE,
+    nombre: fila.NOMBRE_AGENTE,
+    segundoNombre: fila.SEGUNDO_NOMBRE_AGENTE,
+  })
+
+  return {
+    id: fila.ID_DATOS_PERSONALES_AGENTE_JUBILA,
+    dni: fila.DNI_AGENTE ?? '',
+    cuil: fila.CUIL ?? '',
+    apellido: fila.APELLIDO_AGENTE,
+    segundoApellido: fila.SEGUNDO_APELLIDO_AGENTE ?? '',
+    nombre: fila.NOMBRE_AGENTE,
+    segundoNombre: fila.SEGUNDO_NOMBRE_AGENTE ?? '',
+    nombreCompleto,
+    sexo: fila.SEXO ?? '',
+    fechaNacimiento: dbDateToStr(fila.FECHA_NACIMIENTO),
+    edadActual: calcEdadActual(fila.FECHA_NACIMIENTO),
+    estadoActivo: fila.ESTADO_ACTIVO,
+    regimen: fila.REGIMEN_JUBILATORIO?.NOMBRE_REGIMEN ?? '',
+    secretaria: fila.SECRETARIA ?? '',
+    programa: fila.PROGRAMA ?? '',
+    cargo: fila.CARGO ?? '',
+    telefono: fila.NUMERO_TELEFONO ?? '',
+    correo: fila.CORREO_ELECTRONICO ?? '',
+    antiguedadRecibo: fila.ANTIGUEDAD_RECIBO_CALC ?? '',
+    antiguedadLicencias: fila.ANTIGUEDAD_LICENCIAS_CALC ?? '',
+  }
+}
+
 export function composeFullName(parts: {
   apellido?: string | null
   segundoApellido?: string | null
