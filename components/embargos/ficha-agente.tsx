@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import {
   BadgeCheck,
   Ban,
@@ -31,8 +32,10 @@ import {
   eliminarRetencion,
   listarEmbargosDeAgente,
   listarRetenciones,
+  obtenerFichaAgente,
+  type FichaAgenteData,
 } from '@/app/actions/embargos'
-import { buscarEmpleados, getEmpleadoPorId } from '@/app/actions/empleados'
+import { buscarEmpleados } from '@/app/actions/empleados'
 import type { Empleado } from '@/lib/empleados'
 import { oficioToPrefill } from '@/lib/oficio-embargo'
 import {
@@ -63,8 +66,9 @@ import {
 } from '@/components/embargos/ui'
 import EmbargoForm from '@/components/embargos/embargo-form'
 import ImportarOficio, { type ArchivoOficio } from '@/components/embargos/importar-oficio'
-import ConsultaEmbargo from '@/components/embargos/consulta-embargo'
 import type { DatosOficio } from '@/lib/oficio-parser'
+
+const ConsultaEmbargo = dynamic(() => import('@/components/embargos/consulta-embargo'), { ssr: false })
 
 interface FichaAgenteProps {
   initialAgenteId?: number | null
@@ -396,6 +400,8 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
   const [confirmEmbargo, setConfirmEmbargo] = useState<EmbargoInput | null>(null)
   const [confirmRetencion, setConfirmRetencion] = useState<RetencionFormInput | null>(null)
   const [successDialog, setSuccessDialog] = useState<{ title: string; message: string } | null>(null)
+  const agenteRef = useRef<HTMLDivElement | null>(null)
+  const skipRetencionesFetchRef = useRef<number | null>(null)
 
   // Importación de oficios judiciales en PDF.
   const [prefillOficio, setPrefillOficio] = useState<Partial<EmbargoInput> | null>(null)
@@ -434,12 +440,17 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
     setFormRevision((value) => value + 1)
   }
 
-  const cargarAgente = async (
-    empleado: Empleado,
-    oficio?: OficioImportado | null,
+  const desplazarAAgente = () => {
+    window.setTimeout(() => {
+      agenteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 120)
+  }
+
+  const aplicarFicha = (
+    data: FichaAgenteData,
     opciones?: { embargoId?: number; textoBusqueda?: string },
   ) => {
-    setAgente(empleado)
+    setAgente(data.agente)
     setResultados([])
     setSinResultados(false)
     setQuery('')
@@ -449,25 +460,54 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
     setRetenciones([])
     setError(null)
     setNotice(null)
+
+    const lista = data.embargos
+    const coincidencia = opciones?.textoBusqueda
+      ? lista.find((embargo) => coincideBusquedaEmbargo(embargo, opciones.textoBusqueda!))?.id
+      : undefined
+
+    let seleccionado: number | null = null
+    if (opciones?.embargoId && lista.some((item) => item.id === opciones.embargoId)) {
+      seleccionado = opciones.embargoId
+    } else if (coincidencia && lista.some((item) => item.id === coincidencia)) {
+      seleccionado = coincidencia
+    } else {
+      seleccionado = lista[0]?.id ?? null
+    }
+
+    setEmbargos(lista)
+    setSelectedId(seleccionado)
+    setRetenciones(seleccionado != null ? data.retencionesPorEmbargo[seleccionado] ?? [] : [])
+    skipRetencionesFetchRef.current = seleccionado
+  }
+
+  const cargarAgente = async (
+    empleado: Empleado,
+    oficio?: OficioImportado | null,
+    opciones?: { embargoId?: number; textoBusqueda?: string; scrollToAgent?: boolean },
+  ) => {
     setLoadingAgent(true)
     try {
-      await recargarEmbargos(empleado.id, opciones?.embargoId, opciones?.textoBusqueda)
+      const data = await obtenerFichaAgente(empleado.id)
+      if (!data) throw new Error('Agente no encontrado')
+      aplicarFicha(data, opciones)
     } catch {
       setError('No se pudieron cargar los embargos del agente.')
     } finally {
       setLoadingAgent(false)
     }
     if (oficio) aplicarOficio(oficio)
+    if (opciones?.scrollToAgent) desplazarAAgente()
   }
 
   useEffect(() => {
     if (!initialAgenteId) return
     let active = true
     setLoadingAgent(true)
-    getEmpleadoPorId(initialAgenteId)
-      .then((empleado) => {
+    obtenerFichaAgente(initialAgenteId)
+      .then((data) => {
         if (!active) return
-        if (empleado) void cargarAgente(empleado, null, { embargoId: initialEmbargoId ?? undefined })
+        if (data) aplicarFicha(data, { embargoId: initialEmbargoId ?? undefined })
         else setError('No se encontró el agente solicitado.')
       })
       .catch(() => {
@@ -482,7 +522,7 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
     return () => {
       active = false
     }
-    // El id inicial sólo se consume una vez; cargarAgente se recrea con el estado del componente.
+    // El id inicial sólo se consume una vez; aplicarFicha se recrea con el estado del componente.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialAgenteId, initialEmbargoId])
 
@@ -490,6 +530,11 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
     if (!selectedId) {
       setRetenciones([])
       return
+    }
+    const skip = skipRetencionesFetchRef.current
+    if (skip != null) {
+      skipRetencionesFetchRef.current = null
+      if (skip === selectedId) return
     }
     let active = true
     setLoadingRetenciones(true)
@@ -521,7 +566,7 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
       if (encontrados.length === 0) {
         setSinResultados(true)
       } else if (encontrados.length === 1) {
-        await cargarAgente(encontrados[0], oficio, { textoBusqueda: texto })
+        await cargarAgente(encontrados[0], oficio, { textoBusqueda: texto, scrollToAgent: true })
       } else {
         setResultados(encontrados)
       }
@@ -725,12 +770,13 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm print:hidden">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <div className="flex-1">
-            <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-[#1e3a8a]">
+            <label htmlFor="buscar-agente-ficha" className="mb-1 block text-[11px] font-bold uppercase tracking-widest text-[#1e3a8a]">
               Buscar agente
             </label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
+                id="buscar-agente-ficha"
                 type="text"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -752,11 +798,17 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
             {searching ? 'Buscando...' : 'Buscar'}
           </button>
         </div>
-        <p className="mt-2 text-[10px] text-slate-400">
+        <p className="mt-2 text-[11px] text-slate-500">
           Buscá por DNI, apellido, nombre, N° de expediente judicial o expediente municipal con formato 000.000/00.
           Desde la ficha podés cargar el embargo y sus retenciones sin cambiar de pantalla.
         </p>
       </div>
+
+      {sinResultados && (
+        <Banner tone="warning" onClose={() => setSinResultados(false)}>
+          No se encontró ningún agente con ese dato. Probá con el DNI completo o parte del apellido.
+        </Banner>
+      )}
 
       {/* Resultados de búsqueda: justo debajo del buscador, antes de la carga de PDF */}
       {resultados.length > 0 && (
@@ -766,7 +818,7 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
               <UserRoundSearch className="h-3.5 w-3.5" />
               {resultados.length} agentes encontrados
             </span>
-            <button type="button" onClick={() => setResultados([])} className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700">
+            <button type="button" onClick={() => setResultados([])} className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700" aria-label="Cerrar resultados">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -775,7 +827,7 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
               <button
                 key={empleado.id}
                 type="button"
-                onClick={() => void cargarAgente(empleado, oficioPendiente, { textoBusqueda: query })}
+                onClick={() => void cargarAgente(empleado, oficioPendiente, { textoBusqueda: query, scrollToAgent: true })}
                 className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-blue-50"
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-[#1e3a8a]">
@@ -801,11 +853,6 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
         onQuitar={() => setOficioAdjunto(null)}
       />
 
-      {sinResultados && (
-        <Banner tone="warning" onClose={() => setSinResultados(false)}>
-          No se encontró ningún agente con ese dato. Probá con el DNI completo o parte del apellido.
-        </Banner>
-      )}
       {error && <Banner tone="error" onClose={() => setError(null)}>{error}</Banner>}
       {notice && <Banner tone="success" onClose={() => setNotice(null)}>{notice}</Banner>}
       {loadingAgent && <LoadingLine text="Cargando agente y embargos..." />}
@@ -814,14 +861,14 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
         <EmptyState
           icon={<Scale className="h-6 w-6" />}
           title="Ficha de embargos del agente"
-          description="Buscá un agente por DNI o apellido. En una sola pantalla vas a ver sus embargos, el detalle del expediente, las retenciones mes a mes y el saldo pendiente."
+          description="Buscá un agente por DNI, nombre, apellido, expediente judicial o expediente municipal. En una sola pantalla vas a ver sus embargos, el detalle del expediente, las retenciones mes a mes y el saldo pendiente."
         />
       )}
 
       {agente && (
         <>
           {/* Cabecera del agente */}
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div ref={agenteRef} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-[#172554] to-[#1e3a8a] px-4 py-3 text-white">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-sm font-black">
@@ -1028,6 +1075,17 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 print:hidden">
+                    {selected.estado === 'NO_IMPUTACION' && (
+                      <button
+                        type="button"
+                        disabled
+                        title="Pendiente de definir el circuito de resolución"
+                        className="flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-semibold text-violet-700 opacity-70"
+                      >
+                        <CheckCircle2 className="h-3 w-3" />
+                        Resolver no imputación
+                      </button>
+                    )}
                     {(selected.estado === 'ACTIVO' || selected.estado === 'ESPERA' || selected.estado === 'NO_IMPUTACION') && (
                       <button
                         type="button"
@@ -1375,7 +1433,7 @@ export default function FichaAgente({ initialAgenteId, initialEmbargoId, onIniti
         onConfirm={() => setSuccessDialog(null)}
       />
 
-      {agente && (
+      {agente && consultaOpen && (
         <ConsultaEmbargo
           open={consultaOpen}
           agente={agente}

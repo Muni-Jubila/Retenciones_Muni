@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
 import {
   Activity,
   ArrowUpRight,
@@ -19,7 +20,10 @@ import {
 } from '@/app/actions/embargos'
 import { formatDate, getDateValidationError } from '@/lib/format-utils'
 import { formatMoney, type ConsultaRangoFiltros, type Embargo } from '@/lib/embargos'
+import { fechaInputBuenosAires } from '@/lib/timezone'
 import { Banner, EmptyState, EstadoBadge, Money, TextField } from '@/components/embargos/ui'
+
+const BotonInformeAltas = dynamic(() => import('@/components/embargos/informe-altas'), { ssr: false })
 
 interface ConsultasEmbargosProps {
   onOpenEmbargo: (agenteId: number, embargoId: number) => void
@@ -59,6 +63,18 @@ const FILTROS_VACIOS: ConsultaRangoFiltros = {
   fechaDesde: '',
   fechaHasta: '',
   periodo: '',
+}
+
+/** Por defecto, Altas muestra los embargos cargados en los últimos 30 días. */
+function filtrosAltasPorDefecto(): ConsultaRangoFiltros {
+  const hasta = new Date()
+  const desde = new Date()
+  desde.setDate(desde.getDate() - 30)
+  return {
+    fechaDesde: fechaInputBuenosAires(desde),
+    fechaHasta: fechaInputBuenosAires(hasta),
+    periodo: '',
+  }
 }
 
 function fechaComparable(value: string | undefined): number | null {
@@ -106,6 +122,13 @@ function GrillaEmbargos({
   mostrarEstado: boolean
   onOpenEmbargo: (agenteId: number, embargoId: number) => void
 }) {
+  const POR_PAGINA = 25
+  const [pagina, setPagina] = useState(0)
+
+  useEffect(() => {
+    setPagina(0)
+  }, [filas])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-8 text-xs font-semibold text-blue-700">
@@ -135,67 +158,118 @@ function GrillaEmbargos({
     )
   }
 
+  const totalPaginas = Math.max(1, Math.ceil(filas.length / POR_PAGINA))
+  const paginaActual = Math.min(pagina, totalPaginas - 1)
+  const inicio = paginaActual * POR_PAGINA
+  const visibles = filas.slice(inicio, inicio + POR_PAGINA)
+
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200">
-      <table className="w-full min-w-[900px] text-xs">
-        <thead className="bg-slate-100 text-[9px] uppercase tracking-wider text-slate-500">
-          <tr>
-            <th className="px-3 py-2 text-left">DNI</th>
-            <th className="px-3 py-2 text-left">Nombre completo</th>
-            <th className="px-3 py-2 text-left">Exp. Judicial</th>
-            <th className="px-3 py-2 text-left">Exp. Retenciones</th>
-            <th className="px-3 py-2 text-right">Deuda</th>
-            <th className="px-3 py-2 text-right">Saldo</th>
-            {mostrarEstado && <th className="px-3 py-2 text-left">Estado</th>}
-            <th className="px-3 py-2 text-center">Ficha</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {filas.map((embargo) => (
-            <tr
-              key={embargo.id}
-              onClick={() => onOpenEmbargo(embargo.idAgente, embargo.id)}
-              className="cursor-pointer transition hover:bg-blue-50/70"
-            >
-              <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-600">{embargo.dni || '—'}</td>
-              <td className="max-w-[240px] truncate px-3 py-2 font-semibold text-slate-800" title={embargo.agente}>
-                {embargo.agente}
-              </td>
-              <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-600">{embargo.expediente || '—'}</td>
-              <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-500">
-                {embargo.expedienteRetenciones || '—'}
-              </td>
-              <td className="whitespace-nowrap px-3 py-2 text-right">
-                <Money value={embargo.deuda} className="text-slate-700" />
-              </td>
-              <td className="whitespace-nowrap px-3 py-2 text-right font-bold">
-                <Money
-                  value={embargo.saldoActual}
-                  className={embargo.saldoActual > 0 ? 'text-rose-600' : 'text-emerald-600'}
-                />
-              </td>
-              {mostrarEstado && (
-                <td className="whitespace-nowrap px-3 py-2">
-                  <EstadoBadge estado={embargo.estado} compact />
-                </td>
-              )}
-              <td className="px-3 py-2 text-center">
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onOpenEmbargo(embargo.idAgente, embargo.id)
-                  }}
-                  className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-bold text-[#1e3a8a] transition hover:bg-blue-100"
-                >
-                  Abrir
-                  <ArrowUpRight className="h-3 w-3" />
-                </button>
-              </td>
+    <div className="overflow-hidden rounded-lg border border-slate-200">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[900px] text-xs">
+          <thead className="bg-slate-100 text-[9px] uppercase tracking-wider text-slate-500">
+            <tr>
+              <th className="px-3 py-2 text-left">DNI</th>
+              <th className="px-3 py-2 text-left">Nombre completo</th>
+              <th className="px-3 py-2 text-left">Exp. Judicial</th>
+              <th className="px-3 py-2 text-left">Exp. Retenciones</th>
+              <th className="px-3 py-2 text-right">Deuda</th>
+              <th className="px-3 py-2 text-right">Saldo</th>
+              {mostrarEstado && <th className="px-3 py-2 text-left">Estado</th>}
+              <th className="px-3 py-2 text-center">Ficha</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {visibles.map((embargo) => (
+              <tr
+                key={embargo.id}
+                tabIndex={0}
+                role="button"
+                aria-label={`Abrir ficha de ${embargo.agente}`}
+                onClick={() => onOpenEmbargo(embargo.idAgente, embargo.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onOpenEmbargo(embargo.idAgente, embargo.id)
+                  }
+                }}
+                className="cursor-pointer transition hover:bg-blue-50/70 focus:bg-blue-50/70 focus:outline-none"
+              >
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-600">{embargo.dni || '—'}</td>
+                <td className="max-w-[240px] truncate px-3 py-2 font-semibold text-slate-800" title={embargo.agente}>
+                  {embargo.agente}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-600">{embargo.expediente || '—'}</td>
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-slate-500">
+                  {embargo.expedienteRetenciones || '—'}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-right">
+                  <Money value={embargo.deuda} className="text-slate-700" />
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-right font-bold">
+                  <Money
+                    value={embargo.saldoActual}
+                    className={embargo.saldoActual > 0 ? 'text-rose-600' : 'text-emerald-600'}
+                  />
+                </td>
+                {mostrarEstado && (
+                  <td className="whitespace-nowrap px-3 py-2">
+                    <EstadoBadge estado={embargo.estado} compact />
+                  </td>
+                )}
+                <td className="px-3 py-2 text-center">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onOpenEmbargo(embargo.idAgente, embargo.id)
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-bold text-[#1e3a8a] transition hover:bg-blue-100"
+                  >
+                    Abrir
+                    <ArrowUpRight className="h-3 w-3" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+        <span>
+          Mostrando {inicio + 1}-{Math.min(inicio + POR_PAGINA, filas.length)} de {filas.length}
+          {filas.length >= 300 ? ' (máximo devuelto por la consulta)' : ''}
+        </span>
+        {totalPaginas > 1 && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPagina((valor) => Math.max(0, valor - 1))}
+              disabled={paginaActual === 0}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Anterior
+            </button>
+            <span className="font-semibold">
+              Página {paginaActual + 1} de {totalPaginas}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPagina((valor) => Math.min(totalPaginas - 1, valor + 1))}
+              disabled={paginaActual >= totalPaginas - 1}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Siguiente
+            </button>
+          </div>
+        )}
+      </div>
+      {filas.length >= 300 && (
+        <p className="border-t border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+          La consulta devolvió el máximo de 300 resultados. Acotá las fechas o el período para ver el resto.
+        </p>
+      )}
     </div>
   )
 }
@@ -282,7 +356,7 @@ export default function ConsultasEmbargos({ onOpenEmbargo }: ConsultasEmbargosPr
   const [cargando, setCargando] = useState<OpcionId | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const [filtrosAltas, setFiltrosAltas] = useState<ConsultaRangoFiltros>({ ...FILTROS_VACIOS })
+  const [filtrosAltas, setFiltrosAltas] = useState<ConsultaRangoFiltros>(() => filtrosAltasPorDefecto())
   const [erroresAltas, setErroresAltas] = useState<Record<string, string>>({})
   const [filtrosActivos, setFiltrosActivos] = useState<ConsultaRangoFiltros>({ ...FILTROS_VACIOS })
   const [erroresActivos, setErroresActivos] = useState<Record<string, string>>({})
@@ -354,13 +428,16 @@ export default function ConsultasEmbargos({ onOpenEmbargo }: ConsultasEmbargosPr
 
   const limpiarFiltros = (opcion: 'ALTAS' | 'ACTIVOS') => {
     if (opcion === 'ALTAS') {
-      setFiltrosAltas({ ...FILTROS_VACIOS })
+      // "Limpiar" vuelve al rango por defecto: últimos 30 días.
+      const iniciales = filtrosAltasPorDefecto()
+      setFiltrosAltas(iniciales)
       setErroresAltas({})
-    } else {
-      setFiltrosActivos({ ...FILTROS_VACIOS })
-      setErroresActivos({})
+      void cargar('ALTAS', iniciales)
+      return
     }
-    void cargar(opcion, { ...FILTROS_VACIOS })
+    setFiltrosActivos({ ...FILTROS_VACIOS })
+    setErroresActivos({})
+    void cargar('ACTIVOS', { ...FILTROS_VACIOS })
   }
 
   const opcionActual = OPCIONES.find((opcion) => opcion.id === opcionAbierta) ?? null
@@ -388,6 +465,7 @@ export default function ConsultasEmbargos({ onOpenEmbargo }: ConsultasEmbargosPr
                 key={opcion.id}
                 type="button"
                 onClick={() => toggleOpcion(opcion.id)}
+                aria-expanded={activa}
                 className={`flex min-h-[110px] w-full flex-col items-start gap-3 rounded-xl border p-4 text-left transition ${
                   activa
                     ? 'border-[#1e3a8a] bg-blue-50 ring-1 ring-[#1e3a8a]/20'
@@ -431,9 +509,18 @@ export default function ConsultasEmbargos({ onOpenEmbargo }: ConsultasEmbargosPr
               </h3>
               <p className="mt-0.5 text-[10px] text-slate-500">{opcionActual.description}</p>
             </div>
+            {opcionAbierta === 'ALTAS' && (
+              <BotonInformeAltas filas={filasActuales} loading={cargando === opcionAbierta} />
+            )}
           </div>
 
           <div className="space-y-4 p-4">
+            {opcionAbierta === 'ALTAS' && (
+              <Banner tone="info">
+                Por defecto se muestran los embargos cargados en los últimos 30 días. Podés ajustar las
+                fechas o el período para acotar la búsqueda.
+              </Banner>
+            )}
             {opcionAbierta !== 'NO_IMPUTACION' && (
               <FiltrosRango
                 filtros={opcionAbierta === 'ALTAS' ? filtrosAltas : filtrosActivos}

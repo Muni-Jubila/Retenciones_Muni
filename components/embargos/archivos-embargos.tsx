@@ -29,6 +29,7 @@ export default function ArchivosEmbargos() {
   const [notice, setNotice] = useState<string | null>(null)
 
   const [reindexados, setReindexados] = useState<number | null>(null)
+  const [confirmarReindex, setConfirmarReindex] = useState(false)
   const [verificacion, setVerificacion] = useState<{
     revisados: number
     inconsistencias: Inconsistencia[]
@@ -165,7 +166,7 @@ export default function ArchivosEmbargos() {
           <div className="mt-4 flex flex-1 flex-col justify-end gap-2">
             <button
               type="button"
-              onClick={() => void runReindexar()}
+              onClick={() => setConfirmarReindex(true)}
               disabled={running !== null}
               className="flex items-center justify-center gap-2 rounded-lg bg-[#1e3a8a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#172554] disabled:opacity-60"
             >
@@ -309,7 +310,7 @@ export default function ArchivosEmbargos() {
               </div>
               <button
                 type="button"
-                onClick={() => void runReindexar()}
+                onClick={() => setConfirmarReindex(true)}
                 disabled={running !== null}
                 className="flex items-center gap-1.5 rounded-lg bg-[#1e3a8a] px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#172554] disabled:opacity-60"
               >
@@ -320,6 +321,19 @@ export default function ArchivosEmbargos() {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmarReindex}
+        title="Reindexar saldos"
+        description="Se recalcularán los saldos de todos los embargos desde la deuda original. Esta acción puede modificar el estado de embargos saldados."
+        confirmLabel="Reindexar"
+        loading={running === 'indexar'}
+        onCancel={() => setConfirmarReindex(false)}
+        onConfirm={() => {
+          setConfirmarReindex(false)
+          void runReindexar()
+        }}
+      />
 
       <ConfirmDialog
         open={Boolean(backupPendiente)}

@@ -62,18 +62,48 @@ export interface AuthenticatedSession {
   mustChangePassword: boolean
 }
 
-export async function getAuthenticatedSession(): Promise<AuthenticatedSession | null> {
+interface SessionRow {
+  ID_SESION: number
+  ID_USUARIO: number
+  FECHA_HORA_INICIO: Date
+  FECHA_HORA_FIN: Date | null
+  ULTIMA_ACTIVIDAD: Date
+  NOMBRE_USUARIO: string
+  ES_RETENCIONES: boolean
+  ID_ROL_RETENCIONES: number | null
+  DEBE_CAMBIAR_CONTRASENA: boolean
+  NOMBRE_ROL: string | null
+}
+
+export async function getAuthenticatedSession(touchActivity = true): Promise<AuthenticatedSession | null> {
   const cookieStore = await cookies()
   const decoded = decodeCookie(cookieStore.get(SESSION_COOKIE)?.value)
   if (!decoded) return null
 
-  const session = await prisma.sESION.findUnique({
-    where: { ID_SESION: decoded.sessionId },
-    include: { USUARIO: { include: { ROL_RETENCIONES: true } } },
-  })
+  // Una sola consulta con JOIN: antes Prisma hacía 5 viajes (BEGIN, DEALLOCATE,
+  // sesión, usuario y COMMIT) por cada validación de sesión.
+  const filas = await prisma.$queryRaw<SessionRow[]>`
+    SELECT
+      s."ID_SESION",
+      s."ID_USUARIO",
+      s."FECHA_HORA_INICIO",
+      s."FECHA_HORA_FIN",
+      s."ULTIMA_ACTIVIDAD",
+      u."NOMBRE_USUARIO",
+      u."RETENCIONES" AS "ES_RETENCIONES",
+      u."ID_ROL_RETENCIONES",
+      u."DEBE_CAMBIAR_CONTRASENA",
+      r."NOMBRE_ROL"
+    FROM "SESION" s
+    INNER JOIN "USUARIO" u ON u."ID_USUARIO" = s."ID_USUARIO"
+    LEFT JOIN "Rol_Retenciones" r ON r."ID_ROL_RETENCIONES" = u."ID_ROL_RETENCIONES"
+    WHERE s."ID_SESION" = ${decoded.sessionId}
+    LIMIT 1
+  `
+  const session = filas[0]
   if (!session || session.FECHA_HORA_FIN) return null
 
-  if (!session.USUARIO.ES_RETENCIONES || !session.USUARIO.ID_ROL_RETENCIONES || !session.USUARIO.ROL_RETENCIONES) {
+  if (!session.ES_RETENCIONES || !session.ID_ROL_RETENCIONES || !session.NOMBRE_ROL) {
     await prisma.sESION.update({
       where: { ID_SESION: session.ID_SESION },
       data: { FECHA_HORA_FIN: new Date() },
@@ -95,7 +125,7 @@ export async function getAuthenticatedSession(): Promise<AuthenticatedSession | 
 
   // La actividad se persiste en la base para que el vencimiento por inactividad
   // no dependa del timestamp de la cookie. Se escribe como máximo una vez por minuto.
-  if (now - lastActivity >= SESSION_ACTIVITY_UPDATE_MS) {
+  if (touchActivity && now - lastActivity >= SESSION_ACTIVITY_UPDATE_MS) {
     await prisma.sESION.update({
       where: { ID_SESION: session.ID_SESION },
       data: { ULTIMA_ACTIVIDAD: new Date() },
@@ -107,16 +137,19 @@ export async function getAuthenticatedSession(): Promise<AuthenticatedSession | 
   return {
     sessionId: session.ID_SESION,
     userId: session.ID_USUARIO,
-    username: session.USUARIO.NOMBRE_USUARIO,
-    role: session.USUARIO.ROL_RETENCIONES?.NOMBRE_ROL ?? '',
-    roleId: session.USUARIO.ID_ROL_RETENCIONES,
-    mustChangePassword: session.USUARIO.DEBE_CAMBIAR_CONTRASENA,
+    username: session.NOMBRE_USUARIO,
+    role: session.NOMBRE_ROL ?? '',
+    roleId: session.ID_ROL_RETENCIONES,
+    mustChangePassword: session.DEBE_CAMBIAR_CONTRASENA,
   }
 }
 
 export async function requireAuthenticatedSession(): Promise<AuthenticatedSession> {
   const session = await getAuthenticatedSession()
   if (!session) throw new Error('Sesión inválida o vencida. Ingrese nuevamente.')
+  if (session.mustChangePassword) {
+    throw new Error('Debe cambiar la contraseña antes de continuar.')
+  }
   return session
 }
 

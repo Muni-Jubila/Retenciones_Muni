@@ -4,62 +4,9 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requireAuthenticatedSession } from '@/lib/auth-session'
 import { logServerError } from '@/lib/safe-error'
-import { calcEdadActual, composeFullName, dbDateToStr, type Empleado } from '@/lib/empleados'
+import { mapEmpleado, type Empleado } from '@/lib/empleados'
 import { getDateValidationError } from '@/lib/format-utils'
 import { parseExpedienteRetenciones } from '@/lib/embargos'
-
-interface FilaEmpleado {
-  ID_DATOS_PERSONALES_AGENTE_JUBILA: number
-  DNI_AGENTE: string | null
-  CUIL: string | null
-  NOMBRE_AGENTE: string
-  APELLIDO_AGENTE: string
-  SEGUNDO_NOMBRE_AGENTE: string | null
-  SEGUNDO_APELLIDO_AGENTE: string | null
-  SEXO: string | null
-  FECHA_NACIMIENTO: Date
-  ESTADO_ACTIVO: boolean
-  SECRETARIA: string | null
-  PROGRAMA: string | null
-  CARGO: string | null
-  NUMERO_TELEFONO: string | null
-  CORREO_ELECTRONICO: string | null
-  ANTIGUEDAD_RECIBO_CALC: string | null
-  ANTIGUEDAD_LICENCIAS_CALC: string | null
-  REGIMEN_JUBILATORIO: { NOMBRE_REGIMEN: string } | null
-}
-
-function mapEmpleado(fila: FilaEmpleado): Empleado {
-  const nombreCompleto = composeFullName({
-    apellido: fila.APELLIDO_AGENTE,
-    segundoApellido: fila.SEGUNDO_APELLIDO_AGENTE,
-    nombre: fila.NOMBRE_AGENTE,
-    segundoNombre: fila.SEGUNDO_NOMBRE_AGENTE,
-  })
-
-  return {
-    id: fila.ID_DATOS_PERSONALES_AGENTE_JUBILA,
-    dni: fila.DNI_AGENTE ?? '',
-    cuil: fila.CUIL ?? '',
-    apellido: fila.APELLIDO_AGENTE,
-    segundoApellido: fila.SEGUNDO_APELLIDO_AGENTE ?? '',
-    nombre: fila.NOMBRE_AGENTE,
-    segundoNombre: fila.SEGUNDO_NOMBRE_AGENTE ?? '',
-    nombreCompleto,
-    sexo: fila.SEXO ?? '',
-    fechaNacimiento: dbDateToStr(fila.FECHA_NACIMIENTO),
-    edadActual: calcEdadActual(fila.FECHA_NACIMIENTO),
-    estadoActivo: fila.ESTADO_ACTIVO,
-    regimen: fila.REGIMEN_JUBILATORIO?.NOMBRE_REGIMEN ?? '',
-    secretaria: fila.SECRETARIA ?? '',
-    programa: fila.PROGRAMA ?? '',
-    cargo: fila.CARGO ?? '',
-    telefono: fila.NUMERO_TELEFONO ?? '',
-    correo: fila.CORREO_ELECTRONICO ?? '',
-    antiguedadRecibo: fila.ANTIGUEDAD_RECIBO_CALC ?? '',
-    antiguedadLicencias: fila.ANTIGUEDAD_LICENCIAS_CALC ?? '',
-  }
-}
 
 const includeRegimen = { REGIMEN_JUBILATORIO: true } as const
 
@@ -132,8 +79,8 @@ export async function buscarEmpleados(query: string): Promise<Empleado[]> {
     const ids = await prisma.$queryRaw<{ id: number }[]>`
       SELECT "ID_DATOS_PERSONALES_AGENTE_JUBILA" AS id
       FROM "DATOS_PERSONALES_AGENTE_JUBILA"
-      WHERE (unaccent("APELLIDO_AGENTE") ILIKE unaccent('%' || ${q} || '%')
-         OR unaccent("NOMBRE_AGENTE") ILIKE unaccent('%' || ${q} || '%'))
+      WHERE (public.f_unaccent("APELLIDO_AGENTE") ILIKE public.f_unaccent('%' || ${q} || '%')
+         OR public.f_unaccent("NOMBRE_AGENTE") ILIKE public.f_unaccent('%' || ${q} || '%'))
         AND "BIT_BORRADO" = false
       ORDER BY "APELLIDO_AGENTE" ASC, "NOMBRE_AGENTE" ASC
       LIMIT 50
