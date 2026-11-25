@@ -78,7 +78,7 @@ export async function buscarEmpleados(query: string): Promise<Empleado[]> {
 
     const ids = await prisma.$queryRaw<{ id: number }[]>`
       SELECT "ID_DATOS_PERSONALES_AGENTE_JUBILA" AS id
-      FROM "DATOS_PERSONALES_AGENTE_JUBILA"
+      FROM "COMUN_DATOS_PERSONALES_AGENTE_JUBILA"
       WHERE (public.f_unaccent("APELLIDO_AGENTE") ILIKE public.f_unaccent('%' || ${q} || '%')
          OR public.f_unaccent("NOMBRE_AGENTE") ILIKE public.f_unaccent('%' || ${q} || '%'))
         AND "BIT_BORRADO" = false
@@ -211,6 +211,7 @@ export async function actualizarEmpleado(
         FECHA_NACIMIENTO: fechaNacimiento,
         FECHA_ULTIMA_MODIFICACION: new Date(),
         USUARIO_ULTIMA_MODIFICACION: session.userId,
+        ORIGEN: 'RETENCIONES',
       },
       include: includeRegimen,
     })

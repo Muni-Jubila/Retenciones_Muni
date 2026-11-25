@@ -36,16 +36,16 @@ export async function recordLoginFailure(username: string, clientAddress: string
   const key = keyFor(username, clientAddress)
 
   const rows = await prisma.$queryRaw<AttemptRow[]>`
-    INSERT INTO "Intento_Login" ("CLAVE", "FALLOS", "PRIMER_FALLO", "ULTIMO_FALLO")
+    INSERT INTO "RETENCIONES_INTENTO_LOGIN" ("CLAVE", "FALLOS", "PRIMER_FALLO", "ULTIMO_FALLO")
     VALUES (${key}, 1, now(), now())
     ON CONFLICT ("CLAVE") DO UPDATE SET
       "FALLOS" = CASE
-        WHEN "Intento_Login"."ULTIMO_FALLO" < now() - interval '15 minutes' THEN 1
-        ELSE "Intento_Login"."FALLOS" + 1
+        WHEN "RETENCIONES_INTENTO_LOGIN"."ULTIMO_FALLO" < now() - interval '15 minutes' THEN 1
+        ELSE "RETENCIONES_INTENTO_LOGIN"."FALLOS" + 1
       END,
       "PRIMER_FALLO" = CASE
-        WHEN "Intento_Login"."ULTIMO_FALLO" < now() - interval '15 minutes' THEN now()
-        ELSE "Intento_Login"."PRIMER_FALLO"
+        WHEN "RETENCIONES_INTENTO_LOGIN"."ULTIMO_FALLO" < now() - interval '15 minutes' THEN now()
+        ELSE "RETENCIONES_INTENTO_LOGIN"."PRIMER_FALLO"
       END,
       "ULTIMO_FALLO" = now()
     RETURNING "FALLOS", "BLOQUEADO_HASTA"

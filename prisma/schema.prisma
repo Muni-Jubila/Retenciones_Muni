@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
   engineType = "binary"
 }
 
@@ -20,11 +20,10 @@ model ARCHIVO_JUBILACION {
   USUARIO_ELIMINACION Int?
   BIT_BORRADO         Boolean   @default(false)
   JUBILA              JUBILA    @relation(fields: [ID_JUBILA], references: [ID_JUBILA], onDelete: Cascade, onUpdate: NoAction, map: "fk_ARCHIVO_JUBILA")
-  USUARIO             USUARIO   @relation("ARCHIVO_JUBILACION_USUARIO_SUBIDA", fields: [USUARIO_SUBIDA], references: [ID_USUARIO], onUpdate: NoAction, map: "fk_ARCHIVO_USUARIO")
-  USUARIO_ELIMINA     USUARIO?  @relation("ARCHIVO_JUBILACION_USUARIO_ELIMINACION", fields: [USUARIO_ELIMINACION], references: [ID_USUARIO], onUpdate: NoAction)
 
   @@index([ID_JUBILA], map: "idx_archivo_id_jubila")
   @@index([USUARIO_SUBIDA], map: "idx_archivo_usuario_subida")
+  @@map("JUBILA_ARCHIVO_JUBILACION")
 }
 
 model CAUSA_BAJA {
@@ -32,46 +31,48 @@ model CAUSA_BAJA {
   NOMBRE_CAUSA_BAJA    String                 @db.VarChar(255)
   DESCRIPCION          String?                @db.VarChar(500)
   HISTORIAL_CAUSA_BAJA HISTORIAL_CAUSA_BAJA[]
+
+  @@map("JUBILA_CAUSA_BAJA")
 }
 
 model DATOS_PERSONALES_AGENTE_JUBILA {
-  ID_DATOS_PERSONALES_AGENTE_JUBILA                                           Int                      @id(map: "PK__DATOS_PE__57B79B1EFC671D62") @default(autoincrement())
-  ID_REGIMEN_JUBILATORIO                                                      Int?
-  DNI_AGENTE                                                                  String?                  @unique(map: "UQ__DATOS_PE__0CB30166200518FE") @db.VarChar(50)
-  NOMBRE_AGENTE                                                               String                   @db.VarChar(255)
-  APELLIDO_AGENTE                                                             String                   @db.VarChar(255)
-  SEGUNDO_NOMBRE_AGENTE                                                       String?                  @db.VarChar(255)
-  SEGUNDO_APELLIDO_AGENTE                                                     String?                  @db.VarChar(255)
-  FECHA_NACIMIENTO                                                            DateTime                 @db.Date
-  SECRETARIA                                                                  String?                  @db.VarChar(255)
-  PROGRAMA                                                                    String?                  @db.VarChar(255)
-  CARGO                                                                       String?                  @db.VarChar(255)
-  SEXO                                                                        String?                  @db.VarChar(50)
-  ANTIGUEDAD_RECIBO                                                           DateTime?                @db.Date
-  ANTIGUEDAD_LICENCIAS                                                        DateTime?                @db.Date
-  FECHA_ESTIMADA_JUBILACI_N_ORDINARIA                                         DateTime?                @map("FECHA_ESTIMADA_JUBILACIÓN_ORDINARIA") @db.Date
-  EDAD_ESTIMACION_JUBILACION                                                  Int?
-  ESTADO_ACTIVO                                                               Boolean                  @default(true)
-  CUIL                                                                        String?                  @db.VarChar(20)
-  NUMERO_TELEFONO                                                             String?                  @db.VarChar(50)
-  CORREO_ELECTRONICO                                                          String?                  @db.VarChar(255)
-  ANTIGUEDAD_LICENCIAS_CALC                                                   String?                  @db.VarChar(200)
-  ANTIGUEDAD_RECIBO_CALC                                                      String?                  @db.VarChar(200)
-  FECHA_INICIO_CREACION_DATOS_PERSONALES                                      DateTime                 @default(now())
-  USUARIO_CREACION                                                            Int?
-  FECHA_ULTIMA_MODIFICACION                                                   DateTime?
-  USUARIO_ULTIMA_MODIFICACION                                                 Int?
-  BIT_BORRADO                                                                 Boolean                  @default(false)
-  REGIMEN_JUBILATORIO                                                         REGIMEN_JUBILATORIO?     @relation(fields: [ID_REGIMEN_JUBILATORIO], references: [ID_REGIMEN_JUBILATORIO], onDelete: NoAction, onUpdate: NoAction, map: "fk_AGENTE_REGIMEN")
-  USUARIO                                                                     USUARIO?                 @relation(fields: [USUARIO_CREACION], references: [ID_USUARIO], onDelete: NoAction, onUpdate: NoAction, map: "FK_DATOS_PERSONALES_USUARIO_CREACION")
-  USUARIO_DATOS_PERSONALES_AGENTE_JUBILA_USUARIO_ULTIMA_MODIFICACIONToUSUARIO USUARIO?                 @relation("DATOS_PERSONALES_AGENTE_JUBILA_USUARIO_ULTIMA_MODIFICACIONToUSUARIO", fields: [USUARIO_ULTIMA_MODIFICACION], references: [ID_USUARIO], onDelete: NoAction, onUpdate: NoAction, map: "FK_DATOS_PERSONALES_USUARIO_MODIFICACION")
-  JUBILA                                                                      JUBILA[]
-  CARRERA_ADMINISTRATIVA                                                      CARRERA_ADMINISTRATIVA[]
-  EMBARGO                                                                     EMBARGO[]
+  ID_DATOS_PERSONALES_AGENTE_JUBILA      Int                      @id(map: "PK__DATOS_PE__57B79B1EFC671D62") @default(autoincrement())
+  ID_REGIMEN_JUBILATORIO                 Int?
+  DNI_AGENTE                             String?                  @unique(map: "UQ__DATOS_PE__0CB30166200518FE") @db.VarChar(50)
+  NOMBRE_AGENTE                          String                   @db.VarChar(255)
+  APELLIDO_AGENTE                        String                   @db.VarChar(255)
+  SEGUNDO_NOMBRE_AGENTE                  String?                  @db.VarChar(255)
+  SEGUNDO_APELLIDO_AGENTE                String?                  @db.VarChar(255)
+  FECHA_NACIMIENTO                       DateTime                 @db.Date
+  SECRETARIA                             String?                  @db.VarChar(255)
+  PROGRAMA                               String?                  @db.VarChar(255)
+  CARGO                                  String?                  @db.VarChar(255)
+  SEXO                                   String?                  @db.VarChar(50)
+  ANTIGUEDAD_RECIBO                      DateTime?                @db.Date
+  ANTIGUEDAD_LICENCIAS                   DateTime?                @db.Date
+  FECHA_ESTIMADA_JUBILACI_N_ORDINARIA    DateTime?                @map("FECHA_ESTIMADA_JUBILACIÓN_ORDINARIA") @db.Date
+  EDAD_ESTIMACION_JUBILACION             Int?
+  ESTADO_ACTIVO                          Boolean                  @default(true)
+  CUIL                                   String?                  @db.VarChar(20)
+  NUMERO_TELEFONO                        String?                  @db.VarChar(50)
+  CORREO_ELECTRONICO                     String?                  @db.VarChar(255)
+  ANTIGUEDAD_LICENCIAS_CALC              String?                  @db.VarChar(200)
+  ANTIGUEDAD_RECIBO_CALC                 String?                  @db.VarChar(200)
+  FECHA_INICIO_CREACION_DATOS_PERSONALES DateTime                 @default(now())
+  USUARIO_CREACION                       Int?
+  FECHA_ULTIMA_MODIFICACION              DateTime?
+  USUARIO_ULTIMA_MODIFICACION            Int?
+  BIT_BORRADO                            Boolean                  @default(false)
+  ORIGEN                                 String                   @default("JUBILA") @db.VarChar(20)
+  REGIMEN_JUBILATORIO                    REGIMEN_JUBILATORIO?     @relation(fields: [ID_REGIMEN_JUBILATORIO], references: [ID_REGIMEN_JUBILATORIO], onDelete: NoAction, onUpdate: NoAction, map: "fk_AGENTE_REGIMEN")
+  JUBILA                                 JUBILA[]
+  CARRERA_ADMINISTRATIVA                 CARRERA_ADMINISTRATIVA[]
+  EMBARGO                                EMBARGO[]
 
   @@index([APELLIDO_AGENTE, NOMBRE_AGENTE], map: "idx_dp_apellido_nombre")
   @@index([FECHA_ESTIMADA_JUBILACI_N_ORDINARIA], map: "idx_dp_fecha_estimada")
   @@index([ID_REGIMEN_JUBILATORIO], map: "idx_dp_id_regimen")
+  @@map("COMUN_DATOS_PERSONALES_AGENTE_JUBILA")
 }
 
 model HISTORIAL_CAUSA_BAJA {
@@ -83,10 +84,10 @@ model HISTORIAL_CAUSA_BAJA {
   USUARIO_ULTIMA_MODIFICACION Int        @default(1)
   CAUSA_BAJA                  CAUSA_BAJA @relation(fields: [ID_CAUSA_BAJA], references: [ID_CAUSA_BAJA], onUpdate: NoAction, map: "fk_HISTORIAL_CAUSA_BAJA_CAUSA")
   JUBILA                      JUBILA     @relation(fields: [ID_JUBILA], references: [ID_JUBILA], onDelete: Cascade, onUpdate: NoAction, map: "fk_HISTORIAL_JUBILA")
-  USUARIO                     USUARIO    @relation(fields: [USUARIO_ULTIMA_MODIFICACION], references: [ID_USUARIO], onUpdate: NoAction, map: "fk_HISTORIAL_USUARIO")
 
   @@index([ID_JUBILA], map: "idx_historial_id_jubila")
   @@index([ID_CAUSA_BAJA], map: "idx_historial_id_causa")
+  @@map("JUBILA_HISTORIAL_CAUSA_BAJA")
 }
 
 model JUBILA {
@@ -114,13 +115,12 @@ model JUBILA {
   BIT_BORRADO                                              Boolean                               @default(false)
   ARCHIVO_JUBILACION                                       ARCHIVO_JUBILACION[]
   DATOS_PERSONALES_AGENTE_JUBILA                           DATOS_PERSONALES_AGENTE_JUBILA        @relation(fields: [ID_AGENTE], references: [ID_DATOS_PERSONALES_AGENTE_JUBILA], onUpdate: NoAction, map: "fk_JUBILA_AGENTE")
-  USUARIO_JUBILA_USUARIO_CREACIONToUSUARIO                 USUARIO                               @relation("JUBILA_USUARIO_CREACIONToUSUARIO", fields: [USUARIO_CREACION], references: [ID_USUARIO], onUpdate: NoAction, map: "fk_JUBILA_USUARIO_CREACION")
-  USUARIO_JUBILA_USUARIO_MODIFICACIONToUSUARIO             USUARIO?                              @relation("JUBILA_USUARIO_MODIFICACIONToUSUARIO", fields: [USUARIO_MODIFICACION], references: [ID_USUARIO], onDelete: NoAction, onUpdate: NoAction, map: "fk_JUBILA_USUARIO_MODIFICACION")
   OTORGAMIENTO_RENOVACION_PROVISORIAS                      OTORGAMIENTO_RENOVACION_PROVISORIAS[]
   HISTORIAL_CAUSA_BAJA                                     HISTORIAL_CAUSA_BAJA[]
 
   @@index([ID_AGENTE], map: "idx_jubila_id_agente")
   @@index([BIT_BORRADO, FECHA_ULTIMA_MODIFICACION(sort: Desc)], map: "idx_jubila_borrado_ultima_mod")
+  @@map("JUBILA_DATOS")
 }
 
 model OTORGAMIENTO_RENOVACION_PROVISORIAS {
@@ -134,6 +134,7 @@ model OTORGAMIENTO_RENOVACION_PROVISORIAS {
   JUBILA                                 JUBILA    @relation(fields: [ID_JUBILA], references: [ID_JUBILA], onDelete: Cascade, onUpdate: NoAction, map: "fk_OTORGAMIENTO_JUBILA")
 
   @@index([ID_JUBILA, FECHA_HASTA_PROVISORIA], map: "idx_otorg_jubila_fecha_hasta")
+  @@map("JUBILA_OTORGAMIENTO_RENOVACION_PROVISORIAS")
 }
 
 model REGIMEN_JUBILATORIO {
@@ -144,6 +145,8 @@ model REGIMEN_JUBILATORIO {
   ANOS_APORTES_REQUERIDOS        Int
   DESCRIPCION                    String?                          @db.VarChar(500)
   DATOS_PERSONALES_AGENTE_JUBILA DATOS_PERSONALES_AGENTE_JUBILA[]
+
+  @@map("JUBILA_REGIMEN_JUBILATORIO")
 }
 
 model SESION {
@@ -156,6 +159,7 @@ model SESION {
 
   @@index([ID_USUARIO], map: "idx_sesion_id_usuario")
   @@index([FECHA_HORA_FIN, ULTIMA_ACTIVIDAD], map: "idx_sesion_fin_actividad")
+  @@map("RETENCIONES_SESION")
 }
 
 model INTENTO_LOGIN {
@@ -167,28 +171,20 @@ model INTENTO_LOGIN {
   ULTIMO_FALLO     DateTime  @default(now())
 
   @@index([ULTIMO_FALLO], map: "idx_intento_login_ultimo")
-  @@map("Intento_Login")
+  @@map("RETENCIONES_INTENTO_LOGIN")
 }
 
 model USUARIO {
-  ID_USUARIO                                                                                         Int                              @id(map: "PK__USUARIO__91136B906C680EBA") @default(autoincrement())
-  NOMBRE_USUARIO                                                                                     String                           @unique(map: "UQ__USUARIO__1E139900200EE1AC") @db.VarChar(255)
-  CONTRASENA_USUARIO                                                                                 String                           @db.VarChar(255)
-  DEBE_CAMBIAR_CONTRASENA                                                                            Boolean                          @default(true)
-  ES_JUBILA                                                                                          Boolean                          @default(true) @map("JUBILA")
-  ES_RETENCIONES                                                                                     Boolean                          @default(false) @map("RETENCIONES")
-  ID_ROL_JUBILA                                                                                       Int?
-  ID_ROL_RETENCIONES                                                                                  Int?
-  ROL_JUBILA                                                                                          ROL_JUBILA?                      @relation(fields: [ID_ROL_JUBILA], references: [ID_ROL_JUBILA])
-  ROL_RETENCIONES                                                                                     ROL_RETENCIONES?                 @relation(fields: [ID_ROL_RETENCIONES], references: [ID_ROL_RETENCIONES])
-  ARCHIVO_JUBILACION                                                                                 ARCHIVO_JUBILACION[]             @relation("ARCHIVO_JUBILACION_USUARIO_SUBIDA")
-  ARCHIVO_JUBILACION_USUARIO_ELIMINACION                                                             ARCHIVO_JUBILACION[]             @relation("ARCHIVO_JUBILACION_USUARIO_ELIMINACION")
-  DATOS_PERSONALES_AGENTE_JUBILA                                                                     DATOS_PERSONALES_AGENTE_JUBILA[]
-  DATOS_PERSONALES_AGENTE_JUBILA_DATOS_PERSONALES_AGENTE_JUBILA_USUARIO_ULTIMA_MODIFICACIONToUSUARIO DATOS_PERSONALES_AGENTE_JUBILA[] @relation("DATOS_PERSONALES_AGENTE_JUBILA_USUARIO_ULTIMA_MODIFICACIONToUSUARIO")
-  HISTORIAL_CAUSA_BAJA                                                                               HISTORIAL_CAUSA_BAJA[]
-  JUBILA_JUBILA_USUARIO_CREACIONToUSUARIO                                                            JUBILA[]                         @relation("JUBILA_USUARIO_CREACIONToUSUARIO")
-  JUBILA_JUBILA_USUARIO_MODIFICACIONToUSUARIO                                                        JUBILA[]                         @relation("JUBILA_USUARIO_MODIFICACIONToUSUARIO")
-  SESION                                                                                             SESION[]
+  ID_USUARIO              Int             @id(map: "RETENCIONES_USUARIO_pkey") @default(autoincrement())
+  NOMBRE_USUARIO          String          @unique(map: "RETENCIONES_USUARIO_NOMBRE_USUARIO_key") @db.VarChar(255)
+  CONTRASENA_USUARIO      String          @db.VarChar(255)
+  DEBE_CAMBIAR_CONTRASENA Boolean         @default(true)
+  ID_ROL_RETENCIONES      Int             @map("ID_ROL")
+  ROL_RETENCIONES         ROL_RETENCIONES @relation(fields: [ID_ROL_RETENCIONES], references: [ID_ROL_RETENCIONES], onUpdate: NoAction, map: "FK_RETENCIONES_USUARIO_ROL")
+  SESION                  SESION[]
+
+  @@index([ID_ROL_RETENCIONES], map: "IX_USUARIO_ID_ROL_RETENCIONES")
+  @@map("RETENCIONES_USUARIO")
 }
 
 model ROL_RETENCIONES {
@@ -196,15 +192,7 @@ model ROL_RETENCIONES {
   NOMBRE_ROL         String    @db.VarChar(255)
   USUARIO            USUARIO[]
 
-  @@map("Rol_Retenciones")
-}
-
-model ROL_JUBILA {
-  ID_ROL_JUBILA Int       @id @default(autoincrement())
-  NOMBRE_ROL    String    @db.VarChar(255)
-  USUARIO       USUARIO[]
-
-  @@map("Rol_Jubila")
+  @@map("RETENCIONES_ROL")
 }
 
 model CARRERA_ADMINISTRATIVA {
@@ -218,6 +206,7 @@ model CARRERA_ADMINISTRATIVA {
 
   @@unique([DOCUMENTO_EMPLEADO, FECHA_ALTA], map: "UQ_CARRERA_ADMINISTRATIVA_DOCUMENTO_FECHA_ALTA")
   @@index([DOCUMENTO_EMPLEADO], map: "IX_CARRERA_ADMINISTRATIVA_DOCUMENTO")
+  @@map("COMUN_CARRERA_ADMINISTRATIVA")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -261,27 +250,29 @@ model EMBARGO {
   @@index([ID_AGENTE, BIT_BORRADO], map: "idx_embargo_id_agente")
   @@index([EXPEDIENTE], map: "idx_embargo_expediente")
   @@index([ESTADO, BIT_BORRADO], map: "idx_embargo_estado")
+  @@map("RETENCIONES_EMBARGO")
 }
 
 model RETENCION_EMBARGO {
-  ID_RETENCION        Int      @id(map: "PK__RETENCION_EMBARGO__ID") @default(autoincrement())
-  ID_EMBARGO          Int
-  PERIODO             String   @db.VarChar(7)
-  SUELDO              Decimal  @default(0) @db.Decimal(14, 2)
-  REFRIGERIO          Decimal  @default(0) @db.Decimal(14, 2)
+  ID_RETENCION         Int      @id(map: "PK__RETENCION_EMBARGO__ID") @default(autoincrement())
+  ID_EMBARGO           Int
+  PERIODO              String   @db.VarChar(7)
+  SUELDO               Decimal  @default(0) @db.Decimal(14, 2)
+  REFRIGERIO           Decimal  @default(0) @db.Decimal(14, 2)
   /// Cuánto se retuvo del sueldo y del refrigerio ese mes.
-  RETENCION_SUELDO    Decimal  @default(0) @db.Decimal(14, 2)
-  RETENCION_REFRIGERIO Decimal @default(0) @db.Decimal(14, 2)
+  RETENCION_SUELDO     Decimal  @default(0) @db.Decimal(14, 2)
+  RETENCION_REFRIGERIO Decimal  @default(0) @db.Decimal(14, 2)
   /// Salario mínimo vital y móvil vigente cuando se registró la retención.
-  SALARIO_MINIMO      Decimal  @default(398800) @db.Decimal(14, 2)
-  RETENCION_MENSUAL   Decimal  @default(0) @db.Decimal(14, 2)
-  SALDO               Decimal  @default(0) @db.Decimal(14, 2)
-  DEVOLUCION          Decimal  @default(0) @db.Decimal(14, 2)
-  OBSERVACIONES       String?  @db.VarChar(500)
-  FECHA_REGISTRO      DateTime @default(now())
-  USUARIO_CREACION    Int
-  EMBARGO             EMBARGO  @relation(fields: [ID_EMBARGO], references: [ID_EMBARGO], onDelete: Cascade, onUpdate: NoAction, map: "fk_RETENCION_EMBARGO")
+  SALARIO_MINIMO       Decimal  @default(398800) @db.Decimal(14, 2)
+  RETENCION_MENSUAL    Decimal  @default(0) @db.Decimal(14, 2)
+  SALDO                Decimal  @default(0) @db.Decimal(14, 2)
+  DEVOLUCION           Decimal  @default(0) @db.Decimal(14, 2)
+  OBSERVACIONES        String?  @db.VarChar(500)
+  FECHA_REGISTRO       DateTime @default(now())
+  USUARIO_CREACION     Int
+  EMBARGO              EMBARGO  @relation(fields: [ID_EMBARGO], references: [ID_EMBARGO], onDelete: Cascade, onUpdate: NoAction, map: "fk_RETENCION_EMBARGO")
 
   @@unique([ID_EMBARGO, PERIODO], map: "uq_retencion_embargo_periodo")
   @@index([PERIODO], map: "idx_retencion_periodo")
+  @@map("RETENCIONES_RETENCION_EMBARGO")
 }

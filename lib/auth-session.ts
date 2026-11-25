@@ -69,10 +69,9 @@ interface SessionRow {
   FECHA_HORA_FIN: Date | null
   ULTIMA_ACTIVIDAD: Date
   NOMBRE_USUARIO: string
-  ES_RETENCIONES: boolean
-  ID_ROL_RETENCIONES: number | null
+  ID_ROL_RETENCIONES: number
   DEBE_CAMBIAR_CONTRASENA: boolean
-  NOMBRE_ROL: string | null
+  NOMBRE_ROL: string
 }
 
 export async function getAuthenticatedSession(touchActivity = true): Promise<AuthenticatedSession | null> {
@@ -90,20 +89,19 @@ export async function getAuthenticatedSession(touchActivity = true): Promise<Aut
       s."FECHA_HORA_FIN",
       s."ULTIMA_ACTIVIDAD",
       u."NOMBRE_USUARIO",
-      u."RETENCIONES" AS "ES_RETENCIONES",
-      u."ID_ROL_RETENCIONES",
+      u."ID_ROL",
       u."DEBE_CAMBIAR_CONTRASENA",
       r."NOMBRE_ROL"
-    FROM "SESION" s
-    INNER JOIN "USUARIO" u ON u."ID_USUARIO" = s."ID_USUARIO"
-    LEFT JOIN "Rol_Retenciones" r ON r."ID_ROL_RETENCIONES" = u."ID_ROL_RETENCIONES"
+    FROM "RETENCIONES_SESION" s
+    INNER JOIN "RETENCIONES_USUARIO" u ON u."ID_USUARIO" = s."ID_USUARIO"
+    LEFT JOIN "RETENCIONES_ROL" r ON r."ID_ROL_RETENCIONES" = u."ID_ROL"
     WHERE s."ID_SESION" = ${decoded.sessionId}
     LIMIT 1
   `
   const session = filas[0]
   if (!session || session.FECHA_HORA_FIN) return null
 
-  if (!session.ES_RETENCIONES || !session.ID_ROL_RETENCIONES || !session.NOMBRE_ROL) {
+  if (!session.NOMBRE_ROL) {
     await prisma.sESION.update({
       where: { ID_SESION: session.ID_SESION },
       data: { FECHA_HORA_FIN: new Date() },
@@ -159,7 +157,7 @@ export async function requireAuthenticatedSession(): Promise<AuthenticatedSessio
  */
 export async function closeExpiredSessions(): Promise<void> {
   await prisma.$executeRaw`
-    UPDATE "SESION"
+    UPDATE "RETENCIONES_SESION"
     SET "FECHA_HORA_FIN" = LEAST(
       "ULTIMA_ACTIVIDAD" + interval '6 hours',
       "FECHA_HORA_INICIO" + interval '8 hours'

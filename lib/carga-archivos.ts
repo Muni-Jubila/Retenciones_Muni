@@ -43,7 +43,7 @@ async function asegurarTablas(): Promise<void> {
   if (!tablasListas) {
     tablasListas = (async () => {
       await prisma.$executeRawUnsafe(`
-        CREATE TABLE IF NOT EXISTS "CARGA_ARCHIVO" (
+        CREATE TABLE IF NOT EXISTS "RETENCIONES_CARGA_ARCHIVO" (
           "ID" TEXT NOT NULL,
           "NOMBRE" TEXT NOT NULL,
           "TIPO" TEXT NOT NULL,
@@ -54,18 +54,18 @@ async function asegurarTablas(): Promise<void> {
         )
       `)
       await prisma.$executeRawUnsafe(`
-        CREATE TABLE IF NOT EXISTS "CARGA_ARCHIVO_FRAGMENTO" (
+        CREATE TABLE IF NOT EXISTS "RETENCIONES_CARGA_ARCHIVO_FRAGMENTO" (
           "ID_CARGA" TEXT NOT NULL,
           "INDICE" INTEGER NOT NULL,
           "CONTENIDO" BYTEA NOT NULL,
           CONSTRAINT "CARGA_ARCHIVO_FRAGMENTO_PKEY" PRIMARY KEY ("ID_CARGA", "INDICE"),
           CONSTRAINT "CARGA_ARCHIVO_FRAGMENTO_ID_CARGA_FKEY" FOREIGN KEY ("ID_CARGA")
-            REFERENCES "CARGA_ARCHIVO" ("ID") ON DELETE CASCADE ON UPDATE CASCADE
+            REFERENCES "RETENCIONES_CARGA_ARCHIVO" ("ID") ON DELETE CASCADE ON UPDATE CASCADE
         )
       `)
       await prisma.$executeRawUnsafe(`
         CREATE INDEX IF NOT EXISTS "idx_carga_archivo_creado"
-          ON "CARGA_ARCHIVO" ("CREADO")
+          ON "RETENCIONES_CARGA_ARCHIVO" ("CREADO")
       `)
     })().catch((error) => {
       tablasListas = null
@@ -101,7 +101,7 @@ export async function iniciarCarga(input: {
   const id = randomUUID()
   const fragmentos = Math.ceil(tamano / FRAGMENTO_BYTES)
   await prisma.$executeRawUnsafe(
-    `INSERT INTO "CARGA_ARCHIVO" ("ID", "NOMBRE", "TIPO", "TAMANO", "FRAGMENTOS")
+    `INSERT INTO "RETENCIONES_CARGA_ARCHIVO" ("ID", "NOMBRE", "TIPO", "TAMANO", "FRAGMENTOS")
      VALUES ($1, $2, $3, $4, $5)`,
     id,
     nombre,
@@ -129,14 +129,14 @@ export async function guardarFragmento(
   }
 
   const [carga] = await prisma.$queryRawUnsafe<CargaRow[]>(
-    `SELECT "FRAGMENTOS" FROM "CARGA_ARCHIVO" WHERE "ID" = $1`,
+    `SELECT "FRAGMENTOS" FROM "RETENCIONES_CARGA_ARCHIVO" WHERE "ID" = $1`,
     id,
   )
   if (!carga) return { ok: false, error: 'La carga no existe o venció.' }
   if (indice >= carga.FRAGMENTOS) return { ok: false, error: 'Fragmento fuera de rango.' }
 
   await prisma.$executeRawUnsafe(
-    `INSERT INTO "CARGA_ARCHIVO_FRAGMENTO" ("ID_CARGA", "INDICE", "CONTENIDO")
+    `INSERT INTO "RETENCIONES_CARGA_ARCHIVO_FRAGMENTO" ("ID_CARGA", "INDICE", "CONTENIDO")
      VALUES ($1, $2, $3)
      ON CONFLICT ("ID_CARGA", "INDICE")
      DO UPDATE SET "CONTENIDO" = EXCLUDED."CONTENIDO"`,
@@ -153,13 +153,13 @@ export async function leerCarga(id: string): Promise<CargaArchivo | null> {
 
   const [carga] = await prisma.$queryRawUnsafe<CargaRow[]>(
     `SELECT "ID", "NOMBRE", "TIPO", "TAMANO", "FRAGMENTOS"
-     FROM "CARGA_ARCHIVO" WHERE "ID" = $1`,
+     FROM "RETENCIONES_CARGA_ARCHIVO" WHERE "ID" = $1`,
     id,
   )
   if (!carga) return null
 
   const fragmentos = await prisma.$queryRawUnsafe<FragmentoRow[]>(
-    `SELECT "CONTENIDO" FROM "CARGA_ARCHIVO_FRAGMENTO"
+    `SELECT "CONTENIDO" FROM "RETENCIONES_CARGA_ARCHIVO_FRAGMENTO"
      WHERE "ID_CARGA" = $1 ORDER BY "INDICE" ASC`,
     id,
   )
@@ -179,13 +179,13 @@ export async function leerCarga(id: string): Promise<CargaArchivo | null> {
 
 export async function eliminarCarga(id: string): Promise<void> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return
-  await prisma.$executeRawUnsafe(`DELETE FROM "CARGA_ARCHIVO" WHERE "ID" = $1`, id)
+  await prisma.$executeRawUnsafe(`DELETE FROM "RETENCIONES_CARGA_ARCHIVO" WHERE "ID" = $1`, id)
 }
 
 async function limpiarCargasVencidas(): Promise<void> {
   try {
     await prisma.$executeRawUnsafe(
-      `DELETE FROM "CARGA_ARCHIVO" WHERE "CREADO" < now() - ($1::bigint * interval '1 millisecond')`,
+      `DELETE FROM "RETENCIONES_CARGA_ARCHIVO" WHERE "CREADO" < now() - ($1::bigint * interval '1 millisecond')`,
       VIGENCIA_MS,
     )
   } catch {

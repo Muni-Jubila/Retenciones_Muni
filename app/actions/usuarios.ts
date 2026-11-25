@@ -56,7 +56,6 @@ export async function listUsuarios(): Promise<UsuarioListado[]> {
   try {
     await requireAdmin()
     const usuarios = await prisma.uSUARIO.findMany({
-      where: { ES_RETENCIONES: true },
       orderBy: { NOMBRE_USUARIO: 'asc' },
       select: {
         ID_USUARIO: true,
@@ -108,8 +107,6 @@ export async function crearUsuario(
         CONTRASENA_USUARIO: hash,
         DEBE_CAMBIAR_CONTRASENA: true,
         ID_ROL_RETENCIONES: rolId,
-        ES_JUBILA: false,
-        ES_RETENCIONES: true,
       },
     })
     return { ok: true }
@@ -128,7 +125,7 @@ export async function actualizarRolUsuario(id: number, rolId: number): Promise<R
     if (!rolNuevo) return { ok: false, error: 'Seleccione un rol válido para Retenciones.' }
 
     const target = await prisma.uSUARIO.findFirst({
-      where: { ID_USUARIO: id, ES_RETENCIONES: true },
+      where: { ID_USUARIO: id },
     })
     if (!target) {
       return { ok: false, error: 'El usuario no existe o no pertenece a Retenciones.' }
@@ -140,7 +137,7 @@ export async function actualizarRolUsuario(id: number, rolId: number): Promise<R
     const roleIds = await adminRoleIds()
     if (!isAdminRole(rolNuevo.NOMBRE_ROL) && target.ID_ROL_RETENCIONES != null && roleIds.includes(target.ID_ROL_RETENCIONES)) {
       const adminsRestantes = await prisma.uSUARIO.count({
-        where: { ID_ROL_RETENCIONES: { in: roleIds }, ES_RETENCIONES: true },
+        where: { ID_ROL_RETENCIONES: { in: roleIds } },
       })
       if (adminsRestantes <= 1) {
         return { ok: false, error: 'Debe existir al menos un usuario ADMIN en el sistema.' }
@@ -162,7 +159,7 @@ export async function resetearContrasenaUsuario(id: number, contrasenaTemporal: 
   try {
     await requireAdmin()
     const target = await prisma.uSUARIO.findFirst({
-      where: { ID_USUARIO: id, ES_RETENCIONES: true },
+      where: { ID_USUARIO: id },
     })
     if (!target) {
       return { ok: false, error: 'El usuario no existe o no pertenece a Retenciones.' }
@@ -188,7 +185,7 @@ export async function eliminarUsuario(id: number): Promise<RespuestaAccion> {
   try {
     const admin = await requireAdmin()
     const target = await prisma.uSUARIO.findFirst({
-      where: { ID_USUARIO: id, ES_RETENCIONES: true },
+      where: { ID_USUARIO: id },
     })
     if (!target) {
       return { ok: false, error: 'El usuario no existe o no pertenece a Retenciones.' }
@@ -199,7 +196,7 @@ export async function eliminarUsuario(id: number): Promise<RespuestaAccion> {
     const roleIds = await adminRoleIds()
     if (target.ID_ROL_RETENCIONES != null && roleIds.includes(target.ID_ROL_RETENCIONES)) {
       const adminsRestantes = await prisma.uSUARIO.count({
-        where: { ID_ROL_RETENCIONES: { in: roleIds }, ES_RETENCIONES: true },
+        where: { ID_ROL_RETENCIONES: { in: roleIds } },
       })
       if (adminsRestantes <= 1) {
         return { ok: false, error: 'Debe existir al menos un usuario ADMIN en el sistema.' }
@@ -211,16 +208,7 @@ export async function eliminarUsuario(id: number): Promise<RespuestaAccion> {
       data: { FECHA_HORA_FIN: new Date() },
     })
 
-    // Si la cuenta también pertenece a Jubilaciones, solo se le quita el acceso
-    // a Retenciones para no afectar al otro sistema.
-    if (target.ES_JUBILA) {
-      await prisma.uSUARIO.update({
-        where: { ID_USUARIO: id },
-        data: { ES_RETENCIONES: false },
-      })
-    } else {
-      await prisma.uSUARIO.delete({ where: { ID_USUARIO: id } })
-    }
+    await prisma.uSUARIO.delete({ where: { ID_USUARIO: id } })
 
     return { ok: true }
   } catch (error) {

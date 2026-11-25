@@ -12,7 +12,7 @@ out.sesiones = await prisma.sESION.count();
 
 const like = await prisma.$queryRaw`
   SELECT "ID_DATOS_PERSONALES_AGENTE_JUBILA" id
-  FROM "DATOS_PERSONALES_AGENTE_JUBILA"
+  FROM "COMUN_DATOS_PERSONALES_AGENTE_JUBILA"
   WHERE (unaccent("APELLIDO_AGENTE") ILIKE unaccent('%' || ${'perez'} || '%')
      OR unaccent("NOMBRE_AGENTE") ILIKE unaccent('%' || ${'perez'} || '%'))
   LIMIT 5`;
@@ -23,7 +23,7 @@ const emb = await prisma.eMBARGO.findFirst({
 });
 out.embargoConRelaciones = emb ? { id: emb.ID_EMBARGO, agente: emb.DATOS_PERSONALES_AGENTE_JUBILA.APELLIDO_AGENTE, retenciones: emb.RETENCION_EMBARGO.length } : null;
 
-const u = await prisma.uSUARIO.findFirst({ select: { NOMBRE_USUARIO: true, ES_RETENCIONES: true, ES_JUBILA: true } });
+const u = await prisma.uSUARIO.findFirst({ select: { NOMBRE_USUARIO: true, ID_ROL_RETENCIONES: true } });
 out.usuarioMuestra = u;
 
 console.log(JSON.stringify(out, null, 2));

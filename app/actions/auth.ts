@@ -92,9 +92,6 @@ export async function loginUsuario(
       return { ok: false, error: 'Usuario o contraseña incorrectos.' }
     }
 
-    if (!usuario.ES_RETENCIONES) {
-      return { ok: false, error: 'Tu usuario no tiene acceso al sistema de Retenciones.' }
-    }
     if (!usuario.ID_ROL_RETENCIONES || !usuario.ROL_RETENCIONES) {
       return { ok: false, error: 'Tu usuario no tiene un rol asignado en Retenciones. Contactá al administrador.' }
     }

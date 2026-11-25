@@ -83,7 +83,7 @@ df_dp_final = df_dp_final.dropna(subset=['DNI_AGENTE'])
 df_dp_final = df_dp_final.drop_duplicates(subset=['DNI_AGENTE'], keep='first')
 
 print(f"Insertando {len(df_dp_final)} Datos Personales únicos en SQL...")
-df_dp_final.to_sql('DATOS_PERSONALES_AGENTE_JUBILA', con=engine, if_exists='append', index=False)
+df_dp_final.to_sql('COMUN_DATOS_PERSONALES_AGENTE_JUBILA', con=engine, if_exists='append', index=False)
 
 # -------------------------------------------------------------------
 # 3. PROCESAMIENTO DE CARRERA ADMINISTRATIVA (UPSERT)
@@ -120,9 +120,9 @@ print(f"Filas en Excel (con clave válida): {len(df_ca)}")
 
 # --- CARGAR TABLA ACTUAL DESDE LA DB ---
 # Traemos solo las columnas que necesitamos para comparar y para identificar el ID a actualizar
-print("Cargando tabla CARRERA_ADMINISTRATIVA actual desde la base de datos...")
+print("Cargando tabla COMUN_CARRERA_ADMINISTRATIVA actual desde la base de datos...")
 df_db = pd.read_sql(
-    "SELECT ID_CARRERA, DOCUMENTO_EMPLEADO, FECHA_ALTA, FECHA_BAJA, CAUSA_BAJA FROM CARRERA_ADMINISTRATIVA",
+    "SELECT ID_CARRERA, DOCUMENTO_EMPLEADO, FECHA_ALTA, FECHA_BAJA, CAUSA_BAJA FROM COMUN_CARRERA_ADMINISTRATIVA",
     con=engine
 )
 
@@ -158,7 +158,7 @@ if len(df_nuevas) > 0:
         'CAUSA_BAJA_excel': 'CAUSA_BAJA',
     })
     df_insertar['FECHA_CREACION'] = datetime.now()
-    df_insertar.to_sql('CARRERA_ADMINISTRATIVA', con=engine, if_exists='append', index=False)
+    df_insertar.to_sql('COMUN_CARRERA_ADMINISTRATIVA', con=engine, if_exists='append', index=False)
     print(f"  → Nuevas fases insertadas: {len(df_insertar)}")
 else:
     print("  → Sin nuevas fases para insertar.")
@@ -189,7 +189,7 @@ with engine.begin() as conn:
         # NUNCA actualizar por DOCUMENTO_EMPLEADO solo (pisaría todo el historial)
         conn.execute(
             """
-            UPDATE CARRERA_ADMINISTRATIVA
+            UPDATE COMUN_CARRERA_ADMINISTRATIVA
             SET FECHA_BAJA = :fb, CAUSA_BAJA = :cb
             WHERE ID_CARRERA = :id
             """,
