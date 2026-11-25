@@ -30,6 +30,7 @@ Nuevo módulo con cuatro pestañas internas, sin saltos de página:
   - Interfaz VISMA en Excel: exporta el saldo pendiente actual de los embargos activos (deuda menos todas las retenciones ya registradas) con el formato que se envía a VISMA para liquidar los sueldos. El mes a liquidar define la fecha del archivo (día 1) y su nombre.
 
 - **Informes**
+  - Saldos en curso por mes: embargos vigentes, deuda, retenido y saldo al cierre de cada mes, con detalle por embargo y descarga CSV.
   - Actualizar esperas y saldos.
   - Imputar sueldo / refrigerio por período.
   - Emisión de resumen con previsualización y descarga CSV.

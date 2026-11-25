@@ -34,6 +34,7 @@ import {
 } from '@/lib/embargos'
 import { Banner, Money } from '@/components/embargos/ui'
 import { ActionCard, PeriodPicker } from '@/components/embargos/action-card'
+import ReporteSaldos from '@/components/embargos/reporte-saldos'
 
 export default function InformesEmbargos() {
   const [periodo, setPeriodo] = useState(periodoActual())
@@ -180,13 +181,15 @@ export default function InformesEmbargos() {
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-bold text-slate-800">Informes y liquidación</h2>
         <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-          Actualización de esperas, imputación mensual, emisión de resumen y generación de archivos de liquidación.
-          Todas las acciones se ejecutan sin salir de esta pantalla.
+          Actualización de esperas, imputación mensual, emisión de resumen, reporte de saldos en curso y generación
+          de archivos de liquidación. Todas las acciones se ejecutan sin salir de esta pantalla.
         </p>
       </div>
 
       {error && <Banner tone="error" onClose={() => setError(null)}>{error}</Banner>}
       {notice && <Banner tone="success" onClose={() => setNotice(null)}>{notice}</Banner>}
+
+      <ReporteSaldos />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {/* Actualizar esperas */}
