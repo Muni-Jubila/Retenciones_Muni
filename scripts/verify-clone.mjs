@@ -11,11 +11,10 @@ out.retenciones = await prisma.rETENCION_EMBARGO.count();
 out.sesiones = await prisma.sESION.count();
 
 const like = await prisma.$queryRaw`
-  SELECT "ID_DATOS_PERSONALES_AGENTE_JUBILA" id
-  FROM "COMUN_DATOS_PERSONALES_AGENTE_JUBILA"
-  WHERE (unaccent("APELLIDO_AGENTE") ILIKE unaccent('%' || ${'perez'} || '%')
-     OR unaccent("NOMBRE_AGENTE") ILIKE unaccent('%' || ${'perez'} || '%'))
-  LIMIT 5`;
+  SELECT TOP 5 [ID_DATOS_PERSONALES_AGENTE_JUBILA] AS id
+  FROM [dbo].[COMUN_DATOS_PERSONALES_AGENTE_JUBILA]
+  WHERE ([APELLIDO_AGENTE] COLLATE Latin1_General_CI_AI LIKE '%' + ${'perez'} + '%'
+     OR [NOMBRE_AGENTE] COLLATE Latin1_General_CI_AI LIKE '%' + ${'perez'} + '%')`;
 out.busquedaUnaccent = like.length;
 
 const emb = await prisma.eMBARGO.findFirst({

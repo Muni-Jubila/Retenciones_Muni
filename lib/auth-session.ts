@@ -82,21 +82,20 @@ export async function getAuthenticatedSession(touchActivity = true): Promise<Aut
   // Una sola consulta con JOIN: antes Prisma hacía 5 viajes (BEGIN, DEALLOCATE,
   // sesión, usuario y COMMIT) por cada validación de sesión.
   const filas = await prisma.$queryRaw<SessionRow[]>`
-    SELECT
-      s."ID_SESION",
-      s."ID_USUARIO",
-      s."FECHA_HORA_INICIO",
-      s."FECHA_HORA_FIN",
-      s."ULTIMA_ACTIVIDAD",
-      u."NOMBRE_USUARIO",
-      u."ID_ROL",
-      u."DEBE_CAMBIAR_CONTRASENA",
-      r."NOMBRE_ROL"
-    FROM "RETENCIONES_SESION" s
-    INNER JOIN "RETENCIONES_USUARIO" u ON u."ID_USUARIO" = s."ID_USUARIO"
-    LEFT JOIN "RETENCIONES_ROL" r ON r."ID_ROL_RETENCIONES" = u."ID_ROL"
-    WHERE s."ID_SESION" = ${decoded.sessionId}
-    LIMIT 1
+    SELECT TOP 1
+      s.[ID_SESION],
+      s.[ID_USUARIO],
+      s.[FECHA_HORA_INICIO],
+      s.[FECHA_HORA_FIN],
+      s.[ULTIMA_ACTIVIDAD],
+      u.[NOMBRE_USUARIO],
+      u.[ID_ROL],
+      u.[DEBE_CAMBIAR_CONTRASENA],
+      r.[NOMBRE_ROL]
+    FROM [dbo].[RETENCIONES_SESION] s
+    INNER JOIN [dbo].[RETENCIONES_USUARIO] u ON u.[ID_USUARIO] = s.[ID_USUARIO]
+    LEFT JOIN [dbo].[RETENCIONES_ROL] r ON r.[ID_ROL_RETENCIONES] = u.[ID_ROL]
+    WHERE s.[ID_SESION] = ${decoded.sessionId}
   `
   const session = filas[0]
   if (!session || session.FECHA_HORA_FIN) return null
@@ -157,16 +156,16 @@ export async function requireAuthenticatedSession(): Promise<AuthenticatedSessio
  */
 export async function closeExpiredSessions(): Promise<void> {
   await prisma.$executeRaw`
-    UPDATE "RETENCIONES_SESION"
-    SET "FECHA_HORA_FIN" = LEAST(
-      "ULTIMA_ACTIVIDAD" + interval '6 hours',
-      "FECHA_HORA_INICIO" + interval '8 hours'
+    UPDATE [dbo].[RETENCIONES_SESION]
+    SET [FECHA_HORA_FIN] = LEAST(
+      DATEADD(hour, 6, [ULTIMA_ACTIVIDAD]),
+      DATEADD(hour, 8, [FECHA_HORA_INICIO])
     )
-    WHERE "FECHA_HORA_FIN" IS NULL
+    WHERE [FECHA_HORA_FIN] IS NULL
       AND LEAST(
-        "ULTIMA_ACTIVIDAD" + interval '6 hours',
-        "FECHA_HORA_INICIO" + interval '8 hours'
-      ) < now()
+        DATEADD(hour, 6, [ULTIMA_ACTIVIDAD]),
+        DATEADD(hour, 8, [FECHA_HORA_INICIO])
+      ) < SYSUTCDATETIME()
   `
 }
 

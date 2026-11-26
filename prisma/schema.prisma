@@ -4,16 +4,16 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlserver"
   url      = env("DATABASE_URL")
 }
 
 model ARCHIVO_JUBILACION {
   ID_ARCHIVO          Int       @id(map: "PK__ARCHIVO___E2F250292B898A87") @default(autoincrement())
   ID_JUBILA           Int
-  NOMBRE_ARCHIVO      String    @db.VarChar(255)
-  TIPO_ARCHIVO        String?   @db.VarChar(100)
-  DATOS_ARCHIVO       Bytes
+  NOMBRE_ARCHIVO      String    @db.NVarChar(255)
+  TIPO_ARCHIVO        String?   @db.NVarChar(100)
+  DATOS_ARCHIVO       Bytes @db.VarBinary(Max)
   FECHA_SUBIDA        DateTime
   USUARIO_SUBIDA      Int       @default(1)
   FECHA_ELIMINACION   DateTime?
@@ -28,8 +28,8 @@ model ARCHIVO_JUBILACION {
 
 model CAUSA_BAJA {
   ID_CAUSA_BAJA        Int                    @id(map: "PK__BENEFICI__359D6A0B0E5AB44B") @default(autoincrement())
-  NOMBRE_CAUSA_BAJA    String                 @db.VarChar(255)
-  DESCRIPCION          String?                @db.VarChar(500)
+  NOMBRE_CAUSA_BAJA    String                 @db.NVarChar(255)
+  DESCRIPCION          String?                @db.NVarChar(500)
   HISTORIAL_CAUSA_BAJA HISTORIAL_CAUSA_BAJA[]
 
   @@map("JUBILA_CAUSA_BAJA")
@@ -38,32 +38,32 @@ model CAUSA_BAJA {
 model DATOS_PERSONALES_AGENTE_JUBILA {
   ID_DATOS_PERSONALES_AGENTE_JUBILA      Int                      @id(map: "PK__DATOS_PE__57B79B1EFC671D62") @default(autoincrement())
   ID_REGIMEN_JUBILATORIO                 Int?
-  DNI_AGENTE                             String?                  @unique(map: "UQ__DATOS_PE__0CB30166200518FE") @db.VarChar(50)
-  NOMBRE_AGENTE                          String                   @db.VarChar(255)
-  APELLIDO_AGENTE                        String                   @db.VarChar(255)
-  SEGUNDO_NOMBRE_AGENTE                  String?                  @db.VarChar(255)
-  SEGUNDO_APELLIDO_AGENTE                String?                  @db.VarChar(255)
+  DNI_AGENTE                             String?                  @unique(map: "UQ__DATOS_PE__0CB30166200518FE") @db.NVarChar(50)
+  NOMBRE_AGENTE                          String                   @db.NVarChar(255)
+  APELLIDO_AGENTE                        String                   @db.NVarChar(255)
+  SEGUNDO_NOMBRE_AGENTE                  String?                  @db.NVarChar(255)
+  SEGUNDO_APELLIDO_AGENTE                String?                  @db.NVarChar(255)
   FECHA_NACIMIENTO                       DateTime                 @db.Date
-  SECRETARIA                             String?                  @db.VarChar(255)
-  PROGRAMA                               String?                  @db.VarChar(255)
-  CARGO                                  String?                  @db.VarChar(255)
-  SEXO                                   String?                  @db.VarChar(50)
+  SECRETARIA                             String?                  @db.NVarChar(255)
+  PROGRAMA                               String?                  @db.NVarChar(255)
+  CARGO                                  String?                  @db.NVarChar(255)
+  SEXO                                   String?                  @db.NVarChar(50)
   ANTIGUEDAD_RECIBO                      DateTime?                @db.Date
   ANTIGUEDAD_LICENCIAS                   DateTime?                @db.Date
   FECHA_ESTIMADA_JUBILACI_N_ORDINARIA    DateTime?                @map("FECHA_ESTIMADA_JUBILACIÓN_ORDINARIA") @db.Date
   EDAD_ESTIMACION_JUBILACION             Int?
   ESTADO_ACTIVO                          Boolean                  @default(true)
-  CUIL                                   String?                  @db.VarChar(20)
-  NUMERO_TELEFONO                        String?                  @db.VarChar(50)
-  CORREO_ELECTRONICO                     String?                  @db.VarChar(255)
-  ANTIGUEDAD_LICENCIAS_CALC              String?                  @db.VarChar(200)
-  ANTIGUEDAD_RECIBO_CALC                 String?                  @db.VarChar(200)
+  CUIL                                   String?                  @db.NVarChar(20)
+  NUMERO_TELEFONO                        String?                  @db.NVarChar(50)
+  CORREO_ELECTRONICO                     String?                  @db.NVarChar(255)
+  ANTIGUEDAD_LICENCIAS_CALC              String?                  @db.NVarChar(200)
+  ANTIGUEDAD_RECIBO_CALC                 String?                  @db.NVarChar(200)
   FECHA_INICIO_CREACION_DATOS_PERSONALES DateTime                 @default(now())
   USUARIO_CREACION                       Int?
   FECHA_ULTIMA_MODIFICACION              DateTime?
   USUARIO_ULTIMA_MODIFICACION            Int?
   BIT_BORRADO                            Boolean                  @default(false)
-  ORIGEN                                 String                   @default("JUBILA") @db.VarChar(20)
+  ORIGEN                                 String                   @default("JUBILA") @db.NVarChar(20)
   REGIMEN_JUBILATORIO                    REGIMEN_JUBILATORIO?     @relation(fields: [ID_REGIMEN_JUBILATORIO], references: [ID_REGIMEN_JUBILATORIO], onDelete: NoAction, onUpdate: NoAction, map: "fk_AGENTE_REGIMEN")
   JUBILA                                 JUBILA[]
   CARRERA_ADMINISTRATIVA                 CARRERA_ADMINISTRATIVA[]
@@ -93,21 +93,21 @@ model HISTORIAL_CAUSA_BAJA {
 model JUBILA {
   ID_JUBILA                                                Int                                   @id(map: "PK__JUBILA__D2716A6E1CA75C1F") @default(autoincrement())
   ID_AGENTE                                                Int
-  INFORMACION_LABORAL_NUMERO_TRAMITE                       String?                               @db.VarChar(255)
+  INFORMACION_LABORAL_NUMERO_TRAMITE                       String?                               @db.NVarChar(255)
   INFORMACION_LABORAL_FECHA_BAJA                           DateTime?                             @db.Date
-  INFORMACION_LABORAL_NUMERO_EXPEDIENTE_MUNICIPAL_RENUNCIA String?                               @db.VarChar(255)
-  INFORMACION_LABORAL_JUBILACION_NUMERO_EXPEDIENTE_CAJA    String?                               @db.VarChar(255)
-  INFORMACION_LABORAL_NUMERO_RESOLUCION_CAJA               String?                               @db.VarChar(255)
-  INFORMACION_LABORAL_NUMERO_EXPEDIENTE_CAJA_DENEGADA      String?                               @db.VarChar(255)
+  INFORMACION_LABORAL_NUMERO_EXPEDIENTE_MUNICIPAL_RENUNCIA String?                               @db.NVarChar(255)
+  INFORMACION_LABORAL_JUBILACION_NUMERO_EXPEDIENTE_CAJA    String?                               @db.NVarChar(255)
+  INFORMACION_LABORAL_NUMERO_RESOLUCION_CAJA               String?                               @db.NVarChar(255)
+  INFORMACION_LABORAL_NUMERO_EXPEDIENTE_CAJA_DENEGADA      String?                               @db.NVarChar(255)
   PASIVIDAD_FECHA_SOLICITUD                                DateTime?                             @db.Date
   PASIVIDAD_FECHA_ESTIMADA_JUBILACION_ORDINARIA            DateTime?                             @db.Date
-  PASIVIDAD_NUMERO_EXPEDIENTE_PASIVIDAD                    String?                               @db.VarChar(255)
+  PASIVIDAD_NUMERO_EXPEDIENTE_PASIVIDAD                    String?                               @db.NVarChar(255)
   PASIVIDAD_FECHA_FIRMA_CONVENIO                           DateTime?                             @db.Date
   PASIVIDAD_FECHA_INICIO_PASIVIDAD                         DateTime?                             @db.Date
-  PASIVIDAD_OBSERVACIONES_PASIVIDAD                        String?                               @db.VarChar(500)
+  PASIVIDAD_OBSERVACIONES_PASIVIDAD                        String?                               @db.NVarChar(500)
   NOTIFICACION_ARTICULO_CUARENTAYTRES                      DateTime?                             @db.Date
-  NOTIFICACION_NUMERO_EXPEDIENTE_SUSPENCION_PAGO           String?                               @db.VarChar(255)
-  OBSERVACIONES                                            String?                               @db.VarChar(500)
+  NOTIFICACION_NUMERO_EXPEDIENTE_SUSPENCION_PAGO           String?                               @db.NVarChar(255)
+  OBSERVACIONES                                            String?                               @db.NVarChar(500)
   FECHA_INICIO_CREACION_JUBILA                             DateTime
   USUARIO_CREACION                                         Int                                   @default(1)
   FECHA_ULTIMA_MODIFICACION                                DateTime?
@@ -126,11 +126,11 @@ model JUBILA {
 model OTORGAMIENTO_RENOVACION_PROVISORIAS {
   ID_OTORGAMIENTO_RENOVACION_PROVISORIAS Int       @id(map: "PK__OTORGAMI__89CCD18557FBBBA7") @default(autoincrement())
   ID_JUBILA                              Int
-  NUMERO_RESOLUCION_RENOVACION           String?   @db.VarChar(255)
-  NUMERO_EXPEDIENTE_MUNICIPAL            String?   @db.VarChar(255)
+  NUMERO_RESOLUCION_RENOVACION           String?   @db.NVarChar(255)
+  NUMERO_EXPEDIENTE_MUNICIPAL            String?   @db.NVarChar(255)
   FECHA_DESDE_PROVISORIA                 DateTime?
   FECHA_HASTA_PROVISORIA                 DateTime?
-  NUMERO_DECRETO_RESOLUCION_MUNICIPAL    String?   @db.VarChar(255)
+  NUMERO_DECRETO_RESOLUCION_MUNICIPAL    String?   @db.NVarChar(255)
   JUBILA                                 JUBILA    @relation(fields: [ID_JUBILA], references: [ID_JUBILA], onDelete: Cascade, onUpdate: NoAction, map: "fk_OTORGAMIENTO_JUBILA")
 
   @@index([ID_JUBILA, FECHA_HASTA_PROVISORIA], map: "idx_otorg_jubila_fecha_hasta")
@@ -139,11 +139,11 @@ model OTORGAMIENTO_RENOVACION_PROVISORIAS {
 
 model REGIMEN_JUBILATORIO {
   ID_REGIMEN_JUBILATORIO         Int                              @id(map: "PK__REGIMEN___ACF78BB46A8B8962") @default(autoincrement())
-  NOMBRE_REGIMEN                 String                           @db.VarChar(255)
-  SEXO                           String?                          @db.VarChar(50)
+  NOMBRE_REGIMEN                 String                           @db.NVarChar(255)
+  SEXO                           String?                          @db.NVarChar(50)
   EDAD_REQUERIDA                 Int
   ANOS_APORTES_REQUERIDOS        Int
-  DESCRIPCION                    String?                          @db.VarChar(500)
+  DESCRIPCION                    String?                          @db.NVarChar(500)
   DATOS_PERSONALES_AGENTE_JUBILA DATOS_PERSONALES_AGENTE_JUBILA[]
 
   @@map("JUBILA_REGIMEN_JUBILATORIO")
@@ -156,7 +156,7 @@ model SESION {
   FECHA_HORA_FIN    DateTime?
   ULTIMA_ACTIVIDAD  DateTime  @default(now())
   ID_DISPOSITIVO    Int?
-  IP                String?   @db.VarChar(45)
+  IP                String?   @db.NVarChar(45)
   USER_AGENT        String?
   USUARIO           USUARIO   @relation(fields: [ID_USUARIO], references: [ID_USUARIO], onUpdate: NoAction, map: "fk_SESION_USUARIO")
 
@@ -167,7 +167,7 @@ model SESION {
 
 model INTENTO_LOGIN {
   ID_INTENTO_LOGIN Int       @id @default(autoincrement())
-  CLAVE            String    @unique @db.VarChar(64)
+  CLAVE            String    @unique @db.NVarChar(64)
   FALLOS           Int       @default(0)
   BLOQUEADO_HASTA  DateTime?
   PRIMER_FALLO     DateTime  @default(now())
@@ -179,8 +179,8 @@ model INTENTO_LOGIN {
 
 model USUARIO {
   ID_USUARIO              Int             @id(map: "RETENCIONES_USUARIO_pkey") @default(autoincrement())
-  NOMBRE_USUARIO          String          @unique(map: "RETENCIONES_USUARIO_NOMBRE_USUARIO_key") @db.VarChar(255)
-  CONTRASENA_USUARIO      String          @db.VarChar(255)
+  NOMBRE_USUARIO          String          @unique(map: "RETENCIONES_USUARIO_NOMBRE_USUARIO_key") @db.NVarChar(255)
+  CONTRASENA_USUARIO      String          @db.NVarChar(255)
   DEBE_CAMBIAR_CONTRASENA Boolean         @default(true)
   ID_ROL_RETENCIONES      Int             @map("ID_ROL")
   ROL_RETENCIONES         ROL_RETENCIONES @relation(fields: [ID_ROL_RETENCIONES], references: [ID_ROL_RETENCIONES], onUpdate: NoAction, map: "FK_RETENCIONES_USUARIO_ROL")
@@ -192,7 +192,7 @@ model USUARIO {
 
 model ROL_RETENCIONES {
   ID_ROL_RETENCIONES Int       @id @default(autoincrement())
-  NOMBRE_ROL         String    @db.VarChar(255)
+  NOMBRE_ROL         String    @db.NVarChar(255)
   USUARIO            USUARIO[]
 
   @@map("RETENCIONES_ROL")
@@ -200,10 +200,10 @@ model ROL_RETENCIONES {
 
 model CARRERA_ADMINISTRATIVA {
   ID_CARRERA                     Int                             @id(map: "PK__CARRERA___FAB78CADC0AC7DEA") @default(autoincrement())
-  DOCUMENTO_EMPLEADO             String                          @db.VarChar(20)
-  FECHA_ALTA                     DateTime?                       @db.Timestamp(6)
-  FECHA_BAJA                     DateTime?                       @db.Timestamp(6)
-  CAUSA_BAJA                     String?                         @db.VarChar(255)
+  DOCUMENTO_EMPLEADO             String                          @db.NVarChar(20)
+  FECHA_ALTA                     DateTime?                       @db.DateTime2
+  FECHA_BAJA                     DateTime?                       @db.DateTime2
+  CAUSA_BAJA                     String?                         @db.NVarChar(255)
   FECHA_CREACION                 DateTime?                       @default(now())
   DATOS_PERSONALES_AGENTE_JUBILA DATOS_PERSONALES_AGENTE_JUBILA? @relation(fields: [DOCUMENTO_EMPLEADO], references: [DNI_AGENTE], onDelete: NoAction, onUpdate: NoAction)
 
@@ -220,31 +220,31 @@ model CARRERA_ADMINISTRATIVA {
 model EMBARGO {
   ID_EMBARGO                     Int                            @id(map: "PK__EMBARGO__ID") @default(autoincrement())
   ID_AGENTE                      Int
-  ESTADO                         String                         @default("ESPERA") @db.VarChar(20)
-  AUTOS                          String?                        @db.VarChar(500)
+  ESTADO                         String                         @default("ESPERA") @db.NVarChar(20)
+  AUTOS                          String?                        @db.NVarChar(500)
   /// N° de expediente judicial (SAC), el dato que identifica el oficio.
-  EXPEDIENTE                     String?                        @db.VarChar(100)
+  EXPEDIENTE                     String?                        @db.NVarChar(100)
   /// Correlativo interno de retenciones; se muestra como 000.000/000.
   NRO_EXPEDIENTE_RETENCIONES     Int                            @unique @default(autoincrement())
   FECHA_EXPEDIENTE               DateTime?                      @db.Date
-  CUENTA                         String?                        @db.VarChar(100)
-  SUCURSAL                       String?                        @db.VarChar(50)
-  JUEZ                           String?                        @db.VarChar(255)
-  INSTANCIA                      String?                        @db.VarChar(50)
-  NOMENCLATURA                   String?                        @db.VarChar(255)
-  TIPO_PROCESO                   String?                        @db.VarChar(20)
-  SECRETARIA                     String?                        @db.VarChar(100)
+  CUENTA                         String?                        @db.NVarChar(100)
+  SUCURSAL                       String?                        @db.NVarChar(50)
+  JUEZ                           String?                        @db.NVarChar(255)
+  INSTANCIA                      String?                        @db.NVarChar(50)
+  NOMENCLATURA                   String?                        @db.NVarChar(255)
+  TIPO_PROCESO                   String?                        @db.NVarChar(20)
+  SECRETARIA                     String?                        @db.NVarChar(100)
   DEUDA                          Decimal                        @default(0) @db.Decimal(14, 2)
   SALDO_ACTUAL                   Decimal                        @default(0) @db.Decimal(14, 2)
   /// Total devuelto al agente por este embargo (acumulado de las devoluciones mensuales).
   DEVOLUCION                     Decimal                        @default(0) @db.Decimal(14, 2)
   IMPORTE_MENSUAL                Decimal                        @default(0) @db.Decimal(14, 2)
   PORCENTAJE                     Decimal?                       @db.Decimal(5, 2)
-  MARCA_ESPECIAL                 String?                        @db.VarChar(10)
-  OBSERVACIONES                  String?                        @db.VarChar(1000)
+  MARCA_ESPECIAL                 String?                        @db.NVarChar(10)
+  OBSERVACIONES                  String?                        @db.NVarChar(1000)
   FECHA_ALTA                     DateTime                       @default(now())
   FECHA_BAJA                     DateTime?
-  MOTIVO_BAJA                    String?                        @db.VarChar(255)
+  MOTIVO_BAJA                    String?                        @db.NVarChar(255)
   USUARIO_CREACION               Int
   FECHA_ULTIMA_MODIFICACION      DateTime?
   USUARIO_ULTIMA_MODIFICACION    Int?
@@ -261,7 +261,7 @@ model EMBARGO {
 model RETENCION_EMBARGO {
   ID_RETENCION         Int       @id(map: "PK__RETENCION_EMBARGO__ID") @default(autoincrement())
   ID_EMBARGO           Int
-  PERIODO              String    @db.VarChar(7)
+  PERIODO              String    @db.NVarChar(7)
   SUELDO               Decimal   @default(0) @db.Decimal(14, 2)
   REFRIGERIO           Decimal   @default(0) @db.Decimal(14, 2)
   /// Cuánto se retuvo del sueldo y del refrigerio ese mes.
@@ -273,9 +273,9 @@ model RETENCION_EMBARGO {
   SALDO                Decimal   @default(0) @db.Decimal(14, 2)
   DEVOLUCION           Decimal   @default(0) @db.Decimal(14, 2)
   /// Fecha y motivo del último movimiento de devolución (null si está retenido).
-  FECHA_DEVOLUCION     DateTime? @db.Timestamptz(6)
-  MOTIVO_DEVOLUCION    String?   @db.VarChar(300)
-  OBSERVACIONES        String?   @db.VarChar(500)
+  FECHA_DEVOLUCION     DateTime? @db.DateTime2
+  MOTIVO_DEVOLUCION    String?   @db.NVarChar(300)
+  OBSERVACIONES        String?   @db.NVarChar(500)
   FECHA_REGISTRO       DateTime  @default(now())
   USUARIO_CREACION     Int
   EMBARGO              EMBARGO   @relation(fields: [ID_EMBARGO], references: [ID_EMBARGO], onDelete: Cascade, onUpdate: NoAction, map: "fk_RETENCION_EMBARGO")
@@ -290,8 +290,8 @@ model RETENCION_EMBARGO {
 // ─────────────────────────────────────────────────────────────────────────────
 model RETENCIONES_ESTADO_RETENCION {
   ID_ESTADO_RETENCION Int     @id @default(autoincrement())
-  NOMBRE              String  @unique @db.VarChar(30)
-  DESCRIPCION         String? @db.VarChar(300)
+  NOMBRE              String  @unique @db.NVarChar(30)
+  DESCRIPCION         String? @db.NVarChar(300)
   ORDEN               Int     @default(0) @db.SmallInt
   ACTIVO              Boolean @default(true)
 }
@@ -300,26 +300,26 @@ model RETENCIONES_HISTORIAL_ESTADO {
   ID_HISTORIAL_ESTADO  BigInt    @id @default(autoincrement())
   ID_EMBARGO           Int
   ID_ESTADO_RETENCION  Int
-  FECHA_DESDE          DateTime  @default(now()) @db.Timestamptz(6)
-  FECHA_HASTA          DateTime? @db.Timestamptz(6)
+  FECHA_DESDE          DateTime  @default(now()) @db.DateTime2
+  FECHA_HASTA          DateTime? @db.DateTime2
   USUARIO_MODIFICACION Int?
-  MOTIVO               String?   @db.VarChar(300)
+  MOTIVO               String?   @db.NVarChar(300)
 
   @@index([ID_EMBARGO, FECHA_DESDE(sort: Desc)])
 }
 
 model RETENCIONES_AUDITORIA {
   ID_AUDITORIA   BigInt   @id @default(autoincrement())
-  TABLA          String   @db.VarChar(100)
-  REGISTRO_ID    String   @db.VarChar(50)
+  TABLA          String   @db.NVarChar(100)
+  REGISTRO_ID    String   @db.NVarChar(50)
   OPERACION      String   @db.Char(1)
   ID_USUARIO     Int?
-  USUARIO        String?  @db.VarChar(100)
-  FECHA          DateTime @default(now()) @db.Timestamptz(6)
+  USUARIO        String?  @db.NVarChar(100)
+  FECHA          DateTime @default(now()) @db.DateTime2
   ID_DISPOSITIVO Int?
-  IP             String?  @db.VarChar(45)
-  DATOS_ANTES    Json?
-  DATOS_DESPUES  Json?
+  IP             String?  @db.NVarChar(45)
+  DATOS_ANTES    String? @db.NVarChar(Max)
+  DATOS_DESPUES  String? @db.NVarChar(Max)
 
   @@index([TABLA, REGISTRO_ID, FECHA(sort: Desc)])
   @@index([FECHA(sort: Desc)])
@@ -327,22 +327,22 @@ model RETENCIONES_AUDITORIA {
 
 model COMUN_UBICACION {
   ID_UBICACION Int     @id @default(autoincrement())
-  NOMBRE       String  @db.VarChar(150)
-  SEDE         String? @db.VarChar(100)
-  PISO         String? @db.VarChar(20)
-  OFICINA      String? @db.VarChar(100)
-  CIDR         String? @db.VarChar(18)
+  NOMBRE       String  @db.NVarChar(150)
+  SEDE         String? @db.NVarChar(100)
+  PISO         String? @db.NVarChar(20)
+  OFICINA      String? @db.NVarChar(100)
+  CIDR         String? @db.NVarChar(18)
   ACTIVO       Boolean @default(true)
   NOTAS        String?
 }
 
 model COMUN_EQUIPO {
   ID_EQUIPO      Int     @id @default(autoincrement())
-  HOSTNAME       String? @db.VarChar(100)
-  IP_ASIGNADA    String? @db.VarChar(45)
+  HOSTNAME       String? @db.NVarChar(100)
+  IP_ASIGNADA    String? @db.NVarChar(45)
   ID_UBICACION   Int?
-  RESPONSABLE    String? @db.VarChar(255)
-  NRO_INVENTARIO String? @db.VarChar(100)
+  RESPONSABLE    String? @db.NVarChar(255)
+  NRO_INVENTARIO String? @db.NVarChar(100)
   ACTIVO         Boolean @default(true)
   NOTAS          String?
 
@@ -351,15 +351,15 @@ model COMUN_EQUIPO {
 
 model COMUN_DISPOSITIVO {
   ID_DISPOSITIVO Int       @id @default(autoincrement())
-  IDENTIFICADOR  String    @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  NOMBRE         String?   @db.VarChar(100)
+  IDENTIFICADOR  String    @unique @default(dbgenerated("newid()")) @db.UniqueIdentifier
+  NOMBRE         String?   @db.NVarChar(100)
   ID_EQUIPO      Int?
-  PLATAFORMA     String?   @db.VarChar(50)
-  NAVEGADOR      String?   @db.VarChar(50)
+  PLATAFORMA     String?   @db.NVarChar(50)
+  NAVEGADOR      String?   @db.NVarChar(50)
   USER_AGENT     String?
-  PRIMER_USO     DateTime  @default(now()) @db.Timestamptz(6)
-  ULTIMO_USO     DateTime? @db.Timestamptz(6)
-  ULTIMA_IP      String?   @db.VarChar(45)
+  PRIMER_USO     DateTime  @default(now()) @db.DateTime2
+  ULTIMO_USO     DateTime? @db.DateTime2
+  ULTIMA_IP      String?   @db.NVarChar(45)
   CONFIABLE      Boolean   @default(false)
   NOTAS          String?
 }

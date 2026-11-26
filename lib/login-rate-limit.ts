@@ -36,19 +36,23 @@ export async function recordLoginFailure(username: string, clientAddress: string
   const key = keyFor(username, clientAddress)
 
   const rows = await prisma.$queryRaw<AttemptRow[]>`
-    INSERT INTO "RETENCIONES_INTENTO_LOGIN" ("CLAVE", "FALLOS", "PRIMER_FALLO", "ULTIMO_FALLO")
-    VALUES (${key}, 1, now(), now())
-    ON CONFLICT ("CLAVE") DO UPDATE SET
-      "FALLOS" = CASE
-        WHEN "RETENCIONES_INTENTO_LOGIN"."ULTIMO_FALLO" < now() - interval '15 minutes' THEN 1
-        ELSE "RETENCIONES_INTENTO_LOGIN"."FALLOS" + 1
+    MERGE [dbo].[RETENCIONES_INTENTO_LOGIN] AS t
+    USING (SELECT ${key} AS CLAVE) AS s
+       ON t.[CLAVE] = s.CLAVE
+    WHEN MATCHED THEN UPDATE SET
+      t.[FALLOS] = CASE
+        WHEN t.[ULTIMO_FALLO] < DATEADD(minute, -15, SYSUTCDATETIME()) THEN 1
+        ELSE t.[FALLOS] + 1
       END,
-      "PRIMER_FALLO" = CASE
-        WHEN "RETENCIONES_INTENTO_LOGIN"."ULTIMO_FALLO" < now() - interval '15 minutes' THEN now()
-        ELSE "RETENCIONES_INTENTO_LOGIN"."PRIMER_FALLO"
+      t.[PRIMER_FALLO] = CASE
+        WHEN t.[ULTIMO_FALLO] < DATEADD(minute, -15, SYSUTCDATETIME()) THEN SYSUTCDATETIME()
+        ELSE t.[PRIMER_FALLO]
       END,
-      "ULTIMO_FALLO" = now()
-    RETURNING "FALLOS", "BLOQUEADO_HASTA"
+      t.[ULTIMO_FALLO] = SYSUTCDATETIME()
+    WHEN NOT MATCHED THEN
+      INSERT ([CLAVE], [FALLOS], [PRIMER_FALLO], [ULTIMO_FALLO])
+      VALUES (s.CLAVE, 1, SYSUTCDATETIME(), SYSUTCDATETIME())
+    OUTPUT inserted.[FALLOS], inserted.[BLOQUEADO_HASTA];
   `
 
   const failures = Number(rows[0]?.FALLOS ?? 0)

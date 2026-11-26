@@ -77,13 +77,12 @@ export async function buscarEmpleados(query: string): Promise<Empleado[]> {
     }
 
     const ids = await prisma.$queryRaw<{ id: number }[]>`
-      SELECT "ID_DATOS_PERSONALES_AGENTE_JUBILA" AS id
-      FROM "COMUN_DATOS_PERSONALES_AGENTE_JUBILA"
-      WHERE (public.f_unaccent("APELLIDO_AGENTE") ILIKE public.f_unaccent('%' || ${q} || '%')
-         OR public.f_unaccent("NOMBRE_AGENTE") ILIKE public.f_unaccent('%' || ${q} || '%'))
-        AND "BIT_BORRADO" = false
-      ORDER BY "APELLIDO_AGENTE" ASC, "NOMBRE_AGENTE" ASC
-      LIMIT 50
+      SELECT TOP 50 [ID_DATOS_PERSONALES_AGENTE_JUBILA] AS id
+      FROM [dbo].[COMUN_DATOS_PERSONALES_AGENTE_JUBILA]
+      WHERE ([APELLIDO_AGENTE] COLLATE Latin1_General_CI_AI LIKE '%' + ${q} + '%'
+         OR [NOMBRE_AGENTE] COLLATE Latin1_General_CI_AI LIKE '%' + ${q} + '%')
+        AND [BIT_BORRADO] = 0
+      ORDER BY [APELLIDO_AGENTE] ASC, [NOMBRE_AGENTE] ASC
     `
 
     if (ids.length === 0) return []

@@ -962,10 +962,10 @@ function buildConsultaWhere(filtros: ConsultaEmbargosFiltros): Prisma.EMBARGOWhe
         condiciones.push({
           OR: [
             { DATOS_PERSONALES_AGENTE_JUBILA: { DNI_AGENTE: { contains: digits } } },
-            { DATOS_PERSONALES_AGENTE_JUBILA: { APELLIDO_AGENTE: { contains: texto, mode: 'insensitive' } } },
-            { DATOS_PERSONALES_AGENTE_JUBILA: { SEGUNDO_APELLIDO_AGENTE: { contains: texto, mode: 'insensitive' } } },
-            { DATOS_PERSONALES_AGENTE_JUBILA: { NOMBRE_AGENTE: { contains: texto, mode: 'insensitive' } } },
-            { DATOS_PERSONALES_AGENTE_JUBILA: { SEGUNDO_NOMBRE_AGENTE: { contains: texto, mode: 'insensitive' } } },
+            { DATOS_PERSONALES_AGENTE_JUBILA: { APELLIDO_AGENTE: { contains: texto } } },
+            { DATOS_PERSONALES_AGENTE_JUBILA: { SEGUNDO_APELLIDO_AGENTE: { contains: texto } } },
+            { DATOS_PERSONALES_AGENTE_JUBILA: { NOMBRE_AGENTE: { contains: texto } } },
+            { DATOS_PERSONALES_AGENTE_JUBILA: { SEGUNDO_NOMBRE_AGENTE: { contains: texto } } },
           ],
         })
       }
@@ -973,12 +973,12 @@ function buildConsultaWhere(filtros: ConsultaEmbargosFiltros): Prisma.EMBARGOWhe
     case 'PROGRAMA':
       if (texto) {
         condiciones.push({
-          DATOS_PERSONALES_AGENTE_JUBILA: { PROGRAMA: { contains: texto, mode: 'insensitive' } },
+          DATOS_PERSONALES_AGENTE_JUBILA: { PROGRAMA: { contains: texto } },
         })
       }
       break
     case 'EXPEDIENTE':
-      if (texto) condiciones.push({ EXPEDIENTE: { contains: texto, mode: 'insensitive' } })
+      if (texto) condiciones.push({ EXPEDIENTE: { contains: texto } })
       break
     case 'CANCELACIONES':
       condiciones.push({ ESTADO: 'CANCELADO' })
@@ -998,18 +998,18 @@ function buildConsultaWhere(filtros: ConsultaEmbargosFiltros): Prisma.EMBARGOWhe
       if (tipo === 'BAJAS_REN_DEC') {
         condiciones.push({
           OR: [
-            { MOTIVO_BAJA: { contains: 'renuncia', mode: 'insensitive' } },
-            { MOTIVO_BAJA: { contains: 'decreto', mode: 'insensitive' } },
+            { MOTIVO_BAJA: { contains: 'renuncia' } },
+            { MOTIVO_BAJA: { contains: 'decreto' } },
           ],
         })
       }
       if (texto) {
         condiciones.push({
           OR: [
-            { EXPEDIENTE: { contains: texto, mode: 'insensitive' } },
-            { AUTOS: { contains: texto, mode: 'insensitive' } },
-            { MOTIVO_BAJA: { contains: texto, mode: 'insensitive' } },
-            { DATOS_PERSONALES_AGENTE_JUBILA: { APELLIDO_AGENTE: { contains: texto, mode: 'insensitive' } } },
+            { EXPEDIENTE: { contains: texto } },
+            { AUTOS: { contains: texto } },
+            { MOTIVO_BAJA: { contains: texto } },
+            { DATOS_PERSONALES_AGENTE_JUBILA: { APELLIDO_AGENTE: { contains: texto } } },
           ],
         })
       }
@@ -1024,10 +1024,10 @@ function buildConsultaWhere(filtros: ConsultaEmbargosFiltros): Prisma.EMBARGOWhe
       if (texto) {
         condiciones.push({
           OR: [
-            { EXPEDIENTE: { contains: texto, mode: 'insensitive' } },
-            { AUTOS: { contains: texto, mode: 'insensitive' } },
+            { EXPEDIENTE: { contains: texto } },
+            { AUTOS: { contains: texto } },
             { DATOS_PERSONALES_AGENTE_JUBILA: { DNI_AGENTE: { contains: texto.replace(/[.\s-]/g, '') } } },
-            { DATOS_PERSONALES_AGENTE_JUBILA: { APELLIDO_AGENTE: { contains: texto, mode: 'insensitive' } } },
+            { DATOS_PERSONALES_AGENTE_JUBILA: { APELLIDO_AGENTE: { contains: texto } } },
           ],
         })
       }
@@ -1443,8 +1443,7 @@ async function buscarAgentesPorDnis(dnis: string[]) {
     const extra = await prisma.dATOS_PERSONALES_AGENTE_JUBILA.findMany({
       where: {
         BIT_BORRADO: false,
-        OR: faltantes.map((dni) => ({ DNI_AGENTE: { contains: dni } })),
-      },
+        OR: faltantes.map((dni) => ({ DNI_AGENTE: { contains: dni } })), },
       select,
     })
     agentes = [...agentes, ...extra]
