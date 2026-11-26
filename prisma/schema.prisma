@@ -155,6 +155,9 @@ model SESION {
   FECHA_HORA_INICIO DateTime
   FECHA_HORA_FIN    DateTime?
   ULTIMA_ACTIVIDAD  DateTime  @default(now())
+  ID_DISPOSITIVO    Int?
+  IP                String?   @db.VarChar(45)
+  USER_AGENT        String?
   USUARIO           USUARIO   @relation(fields: [ID_USUARIO], references: [ID_USUARIO], onUpdate: NoAction, map: "fk_SESION_USUARIO")
 
   @@index([ID_USUARIO], map: "idx_sesion_id_usuario")
@@ -256,25 +259,107 @@ model EMBARGO {
 }
 
 model RETENCION_EMBARGO {
-  ID_RETENCION         Int      @id(map: "PK__RETENCION_EMBARGO__ID") @default(autoincrement())
+  ID_RETENCION         Int       @id(map: "PK__RETENCION_EMBARGO__ID") @default(autoincrement())
   ID_EMBARGO           Int
-  PERIODO              String   @db.VarChar(7)
-  SUELDO               Decimal  @default(0) @db.Decimal(14, 2)
-  REFRIGERIO           Decimal  @default(0) @db.Decimal(14, 2)
+  PERIODO              String    @db.VarChar(7)
+  SUELDO               Decimal   @default(0) @db.Decimal(14, 2)
+  REFRIGERIO           Decimal   @default(0) @db.Decimal(14, 2)
   /// Cuánto se retuvo del sueldo y del refrigerio ese mes.
-  RETENCION_SUELDO     Decimal  @default(0) @db.Decimal(14, 2)
-  RETENCION_REFRIGERIO Decimal  @default(0) @db.Decimal(14, 2)
+  RETENCION_SUELDO     Decimal   @default(0) @db.Decimal(14, 2)
+  RETENCION_REFRIGERIO Decimal   @default(0) @db.Decimal(14, 2)
   /// Salario mínimo vital y móvil vigente cuando se registró la retención.
-  SALARIO_MINIMO       Decimal  @default(398800) @db.Decimal(14, 2)
-  RETENCION_MENSUAL    Decimal  @default(0) @db.Decimal(14, 2)
-  SALDO                Decimal  @default(0) @db.Decimal(14, 2)
-  DEVOLUCION           Decimal  @default(0) @db.Decimal(14, 2)
-  OBSERVACIONES        String?  @db.VarChar(500)
-  FECHA_REGISTRO       DateTime @default(now())
+  SALARIO_MINIMO       Decimal   @default(398800) @db.Decimal(14, 2)
+  RETENCION_MENSUAL    Decimal   @default(0) @db.Decimal(14, 2)
+  SALDO                Decimal   @default(0) @db.Decimal(14, 2)
+  DEVOLUCION           Decimal   @default(0) @db.Decimal(14, 2)
+  /// Fecha y motivo del último movimiento de devolución (null si está retenido).
+  FECHA_DEVOLUCION     DateTime? @db.Timestamptz(6)
+  MOTIVO_DEVOLUCION    String?   @db.VarChar(300)
+  OBSERVACIONES        String?   @db.VarChar(500)
+  FECHA_REGISTRO       DateTime  @default(now())
   USUARIO_CREACION     Int
-  EMBARGO              EMBARGO  @relation(fields: [ID_EMBARGO], references: [ID_EMBARGO], onDelete: Cascade, onUpdate: NoAction, map: "fk_RETENCION_EMBARGO")
+  EMBARGO              EMBARGO   @relation(fields: [ID_EMBARGO], references: [ID_EMBARGO], onDelete: Cascade, onUpdate: NoAction, map: "fk_RETENCION_EMBARGO")
 
   @@unique([ID_EMBARGO, PERIODO], map: "uq_retencion_embargo_periodo")
   @@index([PERIODO], map: "idx_retencion_periodo")
   @@map("RETENCIONES_RETENCION_EMBARGO")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Estados, historial, auditoría y trazabilidad (26/11/2026)
+// ─────────────────────────────────────────────────────────────────────────────
+model RETENCIONES_ESTADO_RETENCION {
+  ID_ESTADO_RETENCION Int     @id @default(autoincrement())
+  NOMBRE              String  @unique @db.VarChar(30)
+  DESCRIPCION         String? @db.VarChar(300)
+  ORDEN               Int     @default(0) @db.SmallInt
+  ACTIVO              Boolean @default(true)
+}
+
+model RETENCIONES_HISTORIAL_ESTADO {
+  ID_HISTORIAL_ESTADO  BigInt    @id @default(autoincrement())
+  ID_EMBARGO           Int
+  ID_ESTADO_RETENCION  Int
+  FECHA_DESDE          DateTime  @default(now()) @db.Timestamptz(6)
+  FECHA_HASTA          DateTime? @db.Timestamptz(6)
+  USUARIO_MODIFICACION Int?
+  MOTIVO               String?   @db.VarChar(300)
+
+  @@index([ID_EMBARGO, FECHA_DESDE(sort: Desc)])
+}
+
+model RETENCIONES_AUDITORIA {
+  ID_AUDITORIA   BigInt   @id @default(autoincrement())
+  TABLA          String   @db.VarChar(100)
+  REGISTRO_ID    String   @db.VarChar(50)
+  OPERACION      String   @db.Char(1)
+  ID_USUARIO     Int?
+  USUARIO        String?  @db.VarChar(100)
+  FECHA          DateTime @default(now()) @db.Timestamptz(6)
+  ID_DISPOSITIVO Int?
+  IP             String?  @db.VarChar(45)
+  DATOS_ANTES    Json?
+  DATOS_DESPUES  Json?
+
+  @@index([TABLA, REGISTRO_ID, FECHA(sort: Desc)])
+  @@index([FECHA(sort: Desc)])
+}
+
+model COMUN_UBICACION {
+  ID_UBICACION Int     @id @default(autoincrement())
+  NOMBRE       String  @db.VarChar(150)
+  SEDE         String? @db.VarChar(100)
+  PISO         String? @db.VarChar(20)
+  OFICINA      String? @db.VarChar(100)
+  CIDR         String? @db.VarChar(18)
+  ACTIVO       Boolean @default(true)
+  NOTAS        String?
+}
+
+model COMUN_EQUIPO {
+  ID_EQUIPO      Int     @id @default(autoincrement())
+  HOSTNAME       String? @db.VarChar(100)
+  IP_ASIGNADA    String? @db.VarChar(45)
+  ID_UBICACION   Int?
+  RESPONSABLE    String? @db.VarChar(255)
+  NRO_INVENTARIO String? @db.VarChar(100)
+  ACTIVO         Boolean @default(true)
+  NOTAS          String?
+
+  @@index([IP_ASIGNADA])
+}
+
+model COMUN_DISPOSITIVO {
+  ID_DISPOSITIVO Int       @id @default(autoincrement())
+  IDENTIFICADOR  String    @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  NOMBRE         String?   @db.VarChar(100)
+  ID_EQUIPO      Int?
+  PLATAFORMA     String?   @db.VarChar(50)
+  NAVEGADOR      String?   @db.VarChar(50)
+  USER_AGENT     String?
+  PRIMER_USO     DateTime  @default(now()) @db.Timestamptz(6)
+  ULTIMO_USO     DateTime? @db.Timestamptz(6)
+  ULTIMA_IP      String?   @db.VarChar(45)
+  CONFIABLE      Boolean   @default(false)
+  NOTAS          String?
 }
